@@ -48,7 +48,7 @@ Returns stack contents to caller."
    (else
     (initialize-forth-environment)
     (map fparse program)
-    param-stack)))
+    stack-int)))
 
 
 (define (all-strings? xs)
@@ -89,7 +89,7 @@ parsing is very simple."
 
      ((string= ";" word)
       (set! pending-def (reverse pending-def))
-      (if (word-is-numeric-literal (car pending-def) radix)
+      (if (token-is-numeric-literal (car pending-def) radix)
           (error 'feval "can not redefine a numeric literal via :;"
                  (car pending-def) radix (cdr pending-def)))
       (enter-into-vocabulary pending-def)
@@ -112,15 +112,15 @@ parsing is very simple."
       (forth-execute word word-func))
 
      ;; number in supported radix? allowing for others would be nice
-     ((not (equal? #f (word-is-numeric-literal word radix)))
+     ((not (equal? #f (token-is-numeric-literal word radix)))
       ;;(display "number ")(display word)(newline)
-      (push (word-is-numeric-literal word radix)))
+      (push (token-is-numeric-literal word radix)))
 
      ;; I'm sorry Dave, I can't do that
 
      (else
       ;;(display "what the actual fuck ")(display word)(newline)
-      (error 'feval "unknown or undefined word" word radix param-stack)))))
+      (error 'feval "unknown or undefined word" word radix stack-int)))))
 
 (define (enter-into-vocabulary pending-def)
   ;;(display "enter-into-vocabulary ")(display pending-def)(newline)
@@ -130,7 +130,7 @@ parsing is very simple."
       (set! curr (car def))
       (set! proc (proc-for curr))
       (if (equal? proc 'word-not-found)
-          (set! proc (word-is-numeric-literal curr radix)))
+          (set! proc (token-is-numeric-literal curr radix)))
       (if (or (procedure? proc) (number? proc) (list? proc))
           (set! tokenized (cons proc tokenized))
           (error 'enter-into-vocabulary "unknown word in definition :;" curr pending-def))
@@ -151,7 +151,7 @@ or literal numbers."
    (else (error 'forth-execute "error in word definition" word word-func))))
 
 
-(define (word-is-numeric-literal w b)
+(define (token-is-numeric-literal w b)
   "If string W is a numeric literal in base B, return the numeric
 value or #f."
   (cond
@@ -178,35 +178,35 @@ value or #f."
 ;; "bye" encountered on input. eval flushes input if seen.
 (define byebye #f)
 
-;; param-stack is the operand stack for forth, stored as a
+;; stack-int is the operand stack for forth, stored as a
 ;; list. top of stack is (car).
-(define param-stack '())
+(define stack-int '())
 
 (define (clear-stack)
-  (set! param-stack '()))
+  (set! stack-int '()))
 
 (define (push n)
-  (set! param-stack (cons n param-stack)))
+  (set! stack-int (cons n stack-int)))
 
 (define (pop)
   ;; checking depth should be done elsewhere, we'll
   ;; allow a crash here
-  (let ((n (car param-stack)))
-    (set! param-stack (cdr param-stack)) n))
+  (let ((n (car stack-int)))
+    (set! stack-int (cdr stack-int)) n))
 
 (define (check-stack n sym)
   "Throw an error if there's a stack underflow. An optimization
 would be to keep a running record of the stack depth instead of
 checking length on each call, but that's not really needed."
-  (if (> n (length param-stack))
+  (if (> n (length stack-int))
       (error
        check-stack
        "stack underflow on op"
-       sym n (length param-stack) param-stack)))
+       sym n (length stack-int) stack-int)))
 
 (define (dot-s)
   "The .s operator."
-  (string-join (map number->string param-stack) " "))
+  (string-join (map number->string stack-int) " "))
 
 ;; core vocabulary words implementation. these need to be seen by
 ;; Scheme before the dictionaries so the function names bind
@@ -259,7 +259,7 @@ checking length on each call, but that's not really needed."
 
 (define (over)
   (check-stack 2 'over)
-  (push (cadr param-stack))) ;; NOTE: violates api via direct access
+  (push (cadr stack-int))) ;; NOTE: violates api via direct access
 
 ;; primitive arithmetic. these can be redefined by the user.
 
