@@ -4,6 +4,11 @@
 ;;; of The Unlicense. See LICENSE.org.
 ;;;
 
+(use-modules (ice-9 readline)
+             (ice-9 pretty-print)
+             (srfi srfi-14))
+;; (activate-readline)
+
 ;; Starting from a problem on Exercism, I finally find
 ;; the time, motivation and tools to write that Forth
 ;; intepreter that I've planned on for so long.
@@ -41,12 +46,134 @@
 (define (notatil-termsess)
   "The top level for a terminal interaction."
   (notatil-full-reset)
-  (let ((cmdline ""))
+  (let ((cmdline "")
+        (status "enter help for basic help."))
+    (notatil-completion-status status)
     (notatil-prompt cmdline)
     (while (not (string-ci= cmdline "bye"))
       ;; to be provided
+      (set! status " ok ")
+      (notatil-completion-status status)
       (notatil-prompt cmdline))
     ))
+
+
+(define (notatil-prompt cmdline)
+  (set! cmdline (readline "> ")))
+
+
+(define (notatil-completion-status status)
+  (display status)
+  (if (> length stack-int 0)
+      (display (length stack-int)))
+  (newline))
+
+(define (notatil-test prog)
+  "Evaluate a command line for testing. Does not
+initialize the dictionary. Returns the stack-int."
+  (notatil-test-reset)
+  (notatil-tokenize prog)
+  stack-int)
+
+(define (notatil-test-reset)
+  "Reset everything but the dictionary for testing."
+  (clear-stacks)
+  (set! compiling #f)
+  (set! byebye #f)
+  (set! pending-def '())
+  (base-dec))
+
+(define (notatil-tokenize prog)
+  (map notatil-eval (string-split prog (char-set #\space #\tab #\nl))))
+
+(define (notatil-eval word)
+   (let ((word-func (proc-for word)))
+    (cond
+     ;; empty string happens when multiple delimiters hit on split
+     ((string= "" word) )
+
+     ;; ": blah ;" defines a new word, compiling is a
+     ;; generous description. accumulate everything
+     ;; between : and ; and build something we can
+     ;; expand and execute. most words can be redefined
+     ;; but there are some critical exceptions in the
+     ;; in the perm-words list.
+     ((string= ":" word)
+      (set! compiling #t)
+      (set! pending-def '()))
+
+     ((string= ";" word)
+      (set! pending-def (reverse pending-def))
+      (if (token-is-numeric-literal (car pending-def) radix)
+          (error 'feval "can not redefine a numeric literal via :;"
+                 (car pending-def) radix (cdr pending-def)))
+      (enter-into-vocabulary pending-def)
+      (set! compiling #f))
+
+     (compiling
+      (set! pending-def (cons word pending-def)))
+
+     ;; once the user says bye, skip until end
+     ((string-ci= "bye" word)
+      (set! byebye #t))
+     (byebye )
+
+     ;; word found in dictionaries?
+     ;; idea around definitions is that any user word
+     ;; execution can't
+     ;; use a definition of depth less than the depth
+     ;; of the current word. older words use older
+     ;; definitions.
+     ((not (equal? 'word-not-found word-func))
+      ;;(display "executing ")(display word)(newline)
+      (notatil-execute word word-func))
+
+     ;; number in supported radix? allowing for others would be nice
+     ((not (equal? #f (token-is-numeric-literal word radix)))
+      ;;(display "number ")(display word)(newline)
+      (push (token-is-numeric-literal word radix)))
+
+     ;; I'm sorry Dave, I can't do that
+
+     (else
+      ;;(display "what the actual fuck ")(display word)(newline)
+      (error 'notatil-eval
+             "unknown or undefined word"
+             word radix stack-int)))))
+
+
+(define (enter-into-vocabulary pending-def)
+  ;;(display "enter-into-dictionary ")(display pending-def)(newline)
+  (let ((new-word (car pending-def))
+        (def (cdr pending-def))
+        (tokenized '()) (curr "") (proc '()))
+    (while (not (null? def))
+      (set! curr (car def))
+      (set! proc (proc-for curr))
+      (if (equal? proc 'word-not-found)
+          (set! proc (token-is-numeric-literal curr radix)))
+      (if (or (procedure? proc) (number? proc) (list? proc))
+          (set! tokenized (cons proc tokenized))
+          (error 'enter-into-dictionary "unknown word in definition :;" curr pending-def))
+      (set! def (cdr def)))
+    ;; (display "definition ")(display (reverse tokenized))(newline)(newline)
+    (set! dictionary (cons (cons new-word (reverse tokenized)) dictionary))))
+
+
+(define (notatil-execute word word-func)
+  (cond
+   ((null? word-func) )
+   ((procedure? word-func)
+    (apply word-func '()))
+   ((number? word-func)
+    (push word-func))
+   ((list? word-func)
+    (notatil-execute word (car word-func))
+    (notatil-execute word (cdr word-func)))
+   (else
+    (error 'notatil-execute
+           "error in word definition"
+           word word-func))))
 
 
 ;; Reset the environment to a known initial state. Clear
@@ -60,6 +187,7 @@
   (set! byebye #f)
   (set! pending-def '())
   (base-dec))
+
 
 ;; Globals that aren't stacks or dictionary.
 (define compiling #f)
@@ -123,7 +251,7 @@ are supported."
 ;;                16, 10, 8, and 2 by notatil.
 (define (base)
   (check-stack 1 'base)
-  (let (b (pop))
+  (let ((b (pop)))
     (if (not (or (= 16 b) (= 10 b) (= 8 b) (= 2 b)))
         (error 'base
                "illegal base requested must be 16, 10, 8, or 2"
@@ -226,3 +354,162 @@ are supported."
 ;; 2DUP	( d — d d )	Duplicates the top pair of numbers
 ;; 2OVER	( d1 d2 — d1 d2 d1 )	Duplicates the second pair of numbers
 ;; 2DROP	( d1 d2 — d1 )	Discards the top pair of numbers
+
+;; primitive arithmetic. these can be redefined by the user.
+
+
+;; –	( n1 n2 — diff )	Subtracts (n1-n2)
+(define (op-)
+  (check-stack 2 '-)
+  (let* ((n (pop)) (m (pop)) (r (- m n))) (push r)))
+
+;; +	( n1 n2 — sum )	Adds
+(define (op+)
+  (check-stack 2 '+)
+  (let* ((n (pop)) (m (pop)) (r (+ m n))) (push r)))
+
+;; *	( n1 n2 — prod )	Multiplies
+(define (op*)
+  (check-stack 2 '*)
+  (let* ((n (pop)) (m (pop)) (r (* m n))) (push r)))
+
+;; /	( n1 n2 — quot )	Divides (n1/n2)
+(define (op/)
+  (check-stack 2 '/)
+  (let* ((n (pop)) (m (pop)) (r (quotient m n))) (push r)))
+
+;; MOD	( n1 n2 — rem )	Divides; returns remainder only
+(define (mod)
+  (check-stack 2 'mod)
+  (let* ((n (pop)) (m (pop)) (r (remainder m n))) (push r)))
+
+;; /MOD	( n1 n2 — rem quot )	Divides; returns remainder
+;;                            and quotient
+(define (/mod)
+  (check-stack 2 '/mod)
+  (let* ((n (pop)) (m (pop)) (r (remainder m n)) (q (quotient m n))) (push q) (push r)))
+
+
+;; Logical and relational operators. As in C or Forth,
+;; 0 is false and 1 is true.
+;; These can be redefined
+
+(define (forth-bool b)
+  "Convert a real boolean to 1 for true, 0 for false."
+  (if b 1 0))
+
+;; <    ( n1 n2 -- n2 < n1 )
+(define (op<)
+  (check-stack 2 '<)
+  (let* ((n (pop)) (m (pop))
+         (r (< m n)))
+    (push (forth-bool r))))
+
+;; =    ( n1 n2 -- n1 = n2 )
+(define (op=)
+  (check-stack 2 '=)
+  (let* ((n (pop)) (m (pop))
+         (r (= m n)))
+    (push (forth-bool r))))
+
+;; >    ( n1 n2 -- n2 > n1 )
+(define (op>)
+  (check-stack 2 '>)
+  (let* ((n (pop)) (m (pop))
+         (r (> m n)))
+    (push (forth-bool r))))
+
+;; >    ( n1 -- !n1)
+(define (op-not)
+  (check-stack 1 'not)
+  (let* ((n (pop)))
+    (push (forth-bool (zero? n)))))
+
+
+;; constants -- these can not be redefined
+
+(define (c0)
+  (push 0))
+
+(define (c1)
+  (push 1))
+
+(define (c-1)
+  (push -1))
+
+;; find procedure to execute word
+
+(define (proc-for word)
+  (proc-for-r word dictionary))
+
+
+(define (proc-for-r word words)
+  (cond ((null? words) 'word-not-found)
+        ((string-ci= word (car (car words))) (cdr (car words)))
+        (else (proc-for-r word (cdr words)))))
+
+
+;; these are words that can not be redefined
+(define perm-words
+  '("base" "base?"
+    "hexadecimal" "hex"
+    "decimal" "dec"
+    "octal" "oct"
+    "binary" "bin"
+    "-1" "0" "1"
+    "bye" "help" "load" "save"
+    ".""" "." """" "variable" "constant"
+    ":" ";"))
+
+;; These are the starting words of the notatil system.
+;; Think of these as primities. Some can be redefined,
+;; but you probably shouldn't do that. See perm-words
+;; for those that can't be redefined.
+(define core-words
+  (list
+   ;; constants
+   (cons "-1" c-1) (cons "0" c0) (cons "1" c1)
+
+   ;; radix related, allowing some synonyms
+   (cons "base" base) (cons "base?" base?) (cons "radix" base?)
+   (cons "hexadecimal" base-hex) (cons "hex" base-hex)
+   (cons "decimal" base-dec) (cons "dec" base-dec)
+   (cons "octal" base-oct) (cons "oct" base-oct)
+   (cons "binary" base-bin) (cons "bin" base-bin)
+
+   ;; stack manipulation
+   (cons "dup" dup) (cons "drop" drop) (cons "swap" swap)
+   (cons "over" over)
+
+   ;; primitive arithmetic
+   (cons "+" op+) (cons "-" op-) (cons "/" op/)
+   (cons "*" op*) (cons "mod" mod) (cons "/mod" /mod)
+
+   ;; logical operations
+   (cons "<" op<) (cons "=" op=) (cons ">" op>) (cons "not" op-not)
+
+   ;; some special words
+   (cons ".s" dot-s)
+   ;; definition directives are hard coded in main loop
+   ))
+
+;; A pending definition is assembled here.
+(define pending-def '())
+
+;; This is the current dictionary. When the system starts
+;; the core-words are copied. New definitions are added
+;; to the head of the list. All word searches start from
+;; the head of the list. This prevents a redefinition of
+;; a word from changing the behavior of older words that
+;; were compiled with an older definition.
+(define dictionary '())
+
+;;
+
+;; vocab definition from brodie's forth book
+;; +	( n1 n2 — sum )	Adds
+;; –	( n1 n2 — diff )	Subtracts (n1-n2)
+;; *	( n1 n2 — prod )	Multiplies
+;; /	( n1 n2 — quot )	Divides (n1/n2)
+;; /MOD	( n1 n2 — rem quot )	Divides; returns remainder and quotient
+;; MOD	( n1 n2 — rem )	Divides; returns remainder only
