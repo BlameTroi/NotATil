@@ -254,17 +254,23 @@ the length of the stack to the user."
   "If string W is a numeric literal in base B, return the
 numeric value or #f. Only hex, decimal, octal, and binary
 are supported."
-  (cond
-     ((and (= b 16) (string-every chars-hex w))
-      (string->number w b))
-     ((and (= b 10) (string-every chars-dec w))
-      (string->number w b))
-     ((and (= b 8)  (string-every chars-oct w))
-      (string->number w b))
-     ((and (= b 2)  (string-every chars-bin w))
-      (string->number w b))
-     (else
-      #f)))
+  (let ((d (substring w 1))
+        (f (lambda (s)
+             (cond
+              ((and (= b 16) (string-every chars-hex s))
+               (string->number w b))
+              ((and (= b 10) (string-every chars-dec s))
+               (string->number w b))
+              ((and (= b 8)  (string-every chars-oct s))
+               (string->number w b))
+              ((and (= b 2)  (string-every chars-bin s))
+               (string->number w b))
+              (else
+               #f)))))
+    (cond
+     ((string= "-" (substring w 0 1)) (f d))
+     (else (f w)))))
+
 
 ;; character sets for testing strings to see if the are
 ;; valid digit sequences the current base.
@@ -369,16 +375,47 @@ are supported."
        "stack underflow on op"
        sym n (length stack-int) stack-int)))
 
-;; Stack manipulation words.
-
-;; .S ( ? - ? ) Prints the entire stack leaving the
-;;              contents unchanged.
 ;;
+;; Simple output.
+;;
+;; TODO: Radix support on number->string
+;; TODO: Just where does the output go?
+;;
+
+;; .S ( ? -- ? ) Prints the entire stack leaving the
+;;              contents unchanged.
 (define (dot-s)
   "The .s operator."
-  ;; TODO: Radix support on number->string
-  ;; TODO: Just where does the output go?
-  (string-join (map number->string stack-int) " "))
+  (display (string-join (map number->string stack-int) " ")))
+
+;; . ( n -- ) Prints the top of the stack in the current radix.
+(define (dot)
+  (check-stack 1 '.)
+  (display (number->string (pop) radix))
+  (display #\space))
+
+;; cr ( -- ) Prints a carriage return.
+(define (cr)
+  (newline))
+
+;; emit ( c -- ) Prints the top of the stack as a character.
+(define (emit)
+  (check-stack 1 'emit)
+  (display (integer->char (pop))))
+
+;; ." ( -- ) Prints everything up to but not included a trailing
+;;           double quote.
+;;           TODO: not implemented yet.
+(define (dot-quote)
+  (display "dot-quote not yet implemented."))
+
+;; key ( -- c) Accept single character input
+(define (key)
+  (display "key not yet implemented."))
+
+;;
+;; Stack manipulation words.
+;;
 
 ;; DUP	( n — n n )	Duplicates the top stack item
 (define (dup)
@@ -444,11 +481,12 @@ are supported."
 
 
 ;; Logical and relational operators. As in C or Forth,
-;; 0 is false and 1 is true. These can be redefined
+;; 0 is false and anything else is true. Forth returns
+;; -1 from its relational checks.
 
 (define (forth-bool b)
-  "Convert a real boolean to 1 for true, 0 for false."
-  (if b 1 0))
+  "Convert a real boolean to -1 for true, 0 for false."
+  (if b -1 0))
 
 ;; <    ( n1 n2 -- n2 < n1 )
 (define (op<)
@@ -578,8 +616,12 @@ dictionary."
    ;; logical operations
    (cons "<" op<) (cons "=" op=) (cons ">" op>) (cons "not" op-not)
 
-   ;; some special words
-   (cons ".s" dot-s)
+   ;; simple output
+   (cons ".s" dot-s) (cons "." dot) (cons "cr" cr)
+   (cons "emit" emit) (cons ".#\"" dot-quote)
+
+   ;; simple input
+   (cons "key" key)
    ;; definition directives are hard coded in main loop
    ))
 
@@ -595,6 +637,44 @@ dictionary."
 ;; a word from changing the behavior of older words that
 ;; were compiled with an older definition.
 (define dictionary '())
+
+
+;; Variables will be stored in the dictionary as well.
+;; This is going to require that we put type codes on
+;; dictionary entries.
+(define entry-types '(core-word user-word user-var))
+
+
+;;;
+;;; words still to do
+;;;
+
+;; if words then
+;; conditional execution of statements if the top of the
+;; stack is true. unlike pascal, then here means endif or
+;; fi. it closes the conditional body.
+
+;; if words else other words then
+;; adds an else branch to if then.
+
+;; do words loop
+;; and i (as in i j k etc)
+;; a for or counting loop. as in
+;; 10 0 do i . loop
+;; will print 0 to 9
+;; i provides the current loop index to the stack.
+
+;; begin words until loop
+;; do the words and when until is reached, check stack for
+;; true. if not true, run the loop again
+;;
+;; variable names a cell in storage
+;; ! stores the top of the stack into the named variable
+;; @ retrieves the value of the named variable and puts
+;; it on the stack
+;; ? is defined as "@ ."
+;; +! adds and stores, and could be defined as "@ + !"
+
 
 
 ;;;
