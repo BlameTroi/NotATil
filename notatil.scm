@@ -74,8 +74,13 @@
 the dictionary if it is empty. Returns the stack."
   (notatil-test-reset)
   (notatil-tokenize prog)
-  stack-int)
+  stack-data)
 
+(define (notatil-test-clear-dict prog)
+  "Test entry for unit test scripting, does a full reset."
+  (notatil-full-reset)
+  (notatil-tokenize prog)
+  stack-data)
 
 ;;;
 ;;; User interaction helpers
@@ -90,8 +95,8 @@ the dictionary if it is empty. Returns the stack."
   "Display the status of the last commands and report
 the length of the stack to the user."
   (display status)
-  (if (> length stack-int 0)
-      (display (length stack-int)))
+  (if (> length stack-data 0)
+      (display (length stack-data)))
   (newline))
 
 
@@ -134,7 +139,7 @@ the length of the stack to the user."
 ;; of the dictionary.
 ;;
 (define (notatil-eval word)
-   (let ((word-func (definition-of word)))
+   (let ((definition (lookup word)))
     (cond
      ;; empty string happens when multiple delimiters hit on split
      ((string= "" word) )
@@ -171,8 +176,8 @@ the length of the stack to the user."
      ;; use a definition of depth less than the depth
      ;; of the current word. older words use older
      ;; definitions.
-     ((not (equal? 'word-not-found word-func))
-      (notatil-execute word word-func))
+     ((not (equal? 'word-not-found definition))
+      (notatil-execute word (entry-proc definition)))
 
      ;; number in supported radix?
      ((not (equal? #f (token-is-numeric-literal word radix)))
@@ -183,7 +188,7 @@ the length of the stack to the user."
      (else
       (error 'notatil-eval
              "unknown or undefined word"
-             word radix stack-int)))))
+             word radix stack-data)))))
 
 
 ;;
@@ -194,21 +199,21 @@ the length of the stack to the user."
 ;; of procedure references. A user defined word can include numeric
 ;; literals and they are pushed directly onto the stack.
 ;;
-(define (notatil-execute word word-func)
-  "Execute WORD by running it's WORD-FUNC."
+(define (notatil-execute word proc)
+  "Execute WORD by running it's DEFINITION."
   (cond
-   ((null? word-func) )
-   ((procedure? word-func)
-    (apply word-func '()))
-   ((number? word-func)
-    (push word-func))
-   ((list? word-func)
-    (notatil-execute word (car word-func))
-    (notatil-execute word (cdr word-func)))
+   ((null? proc) )
+   ((procedure? proc)
+    (apply proc '()))
+   ((integer? proc)
+    (push proc))
+   ((list? proc)
+    (notatil-execute word (car proc))
+    (notatil-execute word (cdr proc)))
    (else
     (error 'notatil-execute
            "error in word definition"
-           word word-func))))
+           word proc))))
 
 
 ;; Reset the environment to a known initial state. Clear
@@ -217,7 +222,7 @@ the length of the stack to the user."
 (define (notatil-full-reset)
   "Reset the environment to a clean state."
   (clear-stacks)
-  (set! dictionary (list-copy core-words))
+  (dictionary-build)
   (set! compiling #f)
   (set! byebye #f)
   (set! pending-def '())
@@ -231,7 +236,7 @@ the length of the stack to the user."
   "Reset everything but the dictionary for testing."
   (clear-stacks)
   (if (zero? (length dictionary))
-      (set! dictionary (list-copy core-words)))
+      (dictionary-build))
   (set! compiling #f)
   (set! byebye #f)
   (set! pending-def '())
@@ -314,7 +319,7 @@ are supported."
         (error 'base
                "illegal base requested must be 16, 10, 8, or 2"
                b
-               stack-int)
+               stack-data)
         (set! radix b))))
 
 ;; Mnemonic shortcuts to set the base to one of the
@@ -336,14 +341,14 @@ are supported."
 
 (define (clear-stacks)
   "Empty all stacks."
-  (set! stack-int  '())
-  (set! stack-real '())
-  (set! stack-call '()))
+  (set! stack-data   '())
+  (set! stack-float  '())
+  (set! stack-return '()))
 
 
-(define stack-int  '())
-(define stack-real '())
-(define stack-call '())
+(define stack-data   '())  ;; predicates number? integer? exact?
+(define stack-float  '()) ;; predicates number? real? inexact?
+(define stack-return '())
 
 
 ;; Suppport beyond existence won't be provided until
@@ -352,14 +357,29 @@ are supported."
 
 ;; Add an item to the top of the stack.
 (define (push n)
-  (set! stack-int (cons n stack-int)))
+  (set! stack-data (cons n stack-data)))
+
+(define (push-r n)
+  (set! stack-return (cons n stack-return)))
+
+(define (push-f n)
+  (set! stack-float (cons n stack-float)))
 
 ;; Remove an item from the top of the stack.
+;; checking depth should be done elsewhere, we'll
+;; allow a crash here
 (define (pop)
-  ;; checking depth should be done elsewhere, we'll
-  ;; allow a crash here
-  (let ((n (car stack-int)))
-    (set! stack-int (cdr stack-int)) n))
+  (let ((n (car stack-data)))
+    (set! stack-data (cdr stack-data)) n))
+
+(define (pop-r)
+  (let ((n (car stack-return)))
+    (set! stack-return (cdr stack-return)) n))
+
+(define (pop-f)
+  (let ((n (car stack-float)))
+    (set! stack-float (cdr stack-float)) n))
+
 
 ;; Called by built in words, not primitives, to catch
 ;; a stack underflow and report the abort.
@@ -369,11 +389,30 @@ are supported."
 ;; at each call. Maybe later.
 (define (check-stack n sym)
   "Throw an error if there's a stack underflow."
-  (if (> n (length stack-int))
+  (if (> n (length stack-data))
       (error
        'check-stack
        "stack underflow on op"
-       sym n (length stack-int) stack-int)))
+       sym n (length stack-data) stack-data)))
+
+
+(define (check-return n sym)
+  "Throw an error if there's a return stack underflow."
+  (if (> n (length stack-return))
+      (error
+       'check-return
+       "return stack underflow on op"
+       sym n (length stack-return) stack-return)))
+
+
+(define (check-float n sym)
+  "Throw an error if there's a float stack underflow."
+  (if (> n (length stack-float))
+      (error
+       'check-float
+       "float stack underflow on op"
+       sym n (length stack-float) stack-float)))
+
 
 ;;
 ;; Simple output.
@@ -386,7 +425,11 @@ are supported."
 ;;              contents unchanged.
 (define (dot-s)
   "The .s operator."
-  (display (string-join (map number->string stack-int) " ")))
+  (display (string-join (map number->string stack-data) " ")))
+
+;; .R [ ? -- ? ] Print the return stack and leave it unchanged.
+(define (dot-r)
+  (display (string-join (map number->string stack-return) " ")))
 
 ;; . ( n -- ) Prints the top of the stack in the current radix.
 (define (dot)
@@ -431,19 +474,74 @@ are supported."
 ;;                        items
 (define (swap)
   (check-stack 2 'swap)
-  (let ((n (pop)) (m (pop))) (push n) (push m)))
+  (let ((n2 (pop)) (n1 (pop)))
+    (push n2) (push n1)))
 
 ;; OVER	( n1 n2 — n1 n2 n1 )	Copies second item to top
 (define (over)
   (check-stack 2 'over)
-  (push (cadr stack-int))) ;; NOTE: violates api via direct access
+  (let ((n2 (pop)) (n1 (pop)))
+    (push n1) (push n2) (push n1)))
 
-;; TODO:
+;; >r   ( n --) [ -- n ]  Move an item from data to return
+(define (to-r)
+  (check-stack 1 '>r)
+  (push-r (pop)))
+
+;; r>   ( -- n) [ n -- ]  Move an item from return to data
+(define (from-r)
+  (check-return 1 'r>)
+  (push (pop-r)))
+
+;; r@   ( -- n) [ n -- n] Copy an item from return to data
+;; r    ( -- n) [ n -- n] Same as r@, an older name
+(define (fetch-r)
+  (check-return 1 'r@)
+  (let ((n (pop-r)))
+    (push n)
+    (push-r n)))
+
+
 ;; ROT	( n1 n2 n3 — n2 n3 n1 )	Rotates third item to top
+(define (rot)
+  (check-stack 3 'rot)
+  (let ((n3 (pop)) (n2 (pop)) (n1 (pop)))
+    (push n2)
+    (push n3)
+    (push n1)))
+
 ;; 2SWAP	( d1 d2 — d2 d1 )	Reverses the top two pairs of numbers
+(define (2swap)
+  (check-stack 4 '2swap)
+  (let ((d2a (pop)) (d2b (pop)) (d1a (pop)) (d1b (pop)))
+    (push d2b)(push d2a)
+    (push d1b)(push d1a)))
+
 ;; 2DUP	( d — d d )	Duplicates the top pair of numbers
+(define (2dup)
+  (check-stack 2 '2dup)
+  (let ((da (pop)) (db (pop)))
+    (push db)(push da)
+    (push db)(push da)))
+
 ;; 2OVER	( d1 d2 — d1 d2 d1 )	Duplicates the second pair of numbers
+(define (2over)
+  (check-stack 4 '2over)
+  (let ((d2a (pop)) (d2b (pop)) (d1a (pop)) (d1b (pop)))
+    (push d1b)(push d1a)
+    (push d2b)(push d2a)
+    (push d1b)(push d1a)))
+
 ;; 2DROP	( d1 d2 — d1 )	Discards the top pair of numbers
+(define (2drop)
+  (check-stack 2 '2drop)
+  (pop)(pop))
+
+;;
+;; see also http://forth.org/svfig/Len/softstak.htm
+;;
+;; in stack comments right most is top most!
+;;
 
 
 ;; primitive arithmetic. these can be redefined by the user.
@@ -516,32 +614,19 @@ are supported."
     (push (forth-bool (zero? n)))))
 
 
-;; constants -- these can not be redefined
-
-(define (c0)
-  (push 0))
-
-(define (c1)
-  (push 1))
-
-(define (c-1)
-  (push -1))
-
-
 ;;;
 ;;; Dictionary lookup and addition.
 ;;;
 
 ;;
-;; Returns the procedure (a Scheme procedure reference or a list of
-;; them) to be executed for a word.
+;; Returns the dictionary entry for word or 'word-not-found.
 ;;
-(define (definition-of word)
+(define (lookup word)
   "Return the definition to execute WORD from the dictionary, or
 'word-not-found."
   (letrec* ((f (lambda (w d)
                  (cond ((null? d) 'word-not-found)
-                       ((string-ci= w (car (car d))) (cdr (car d)))
+                       ((string-ci= w (entry-name (car d))) (car d))
                        (else (f w (cdr d)))))))
     (f word dictionary)))
 
@@ -562,41 +647,62 @@ dictionary."
       (error 'add-new-word "some core words can not be redefined" pending-def))
   (let ((new-word (car pending-def))
         (def (cdr pending-def))
-        (tokenized '()) (curr "") (proc '()))
+        (tokenized '()) (curr "") (curr-def '()) (proc '()))
     (while (not (null? def))
       (set! curr (car def))
-      (set! proc (definition-of curr))
-      (if (equal? proc 'word-not-found)
-          (set! proc (token-is-numeric-literal curr radix)))
-      (if (or (procedure? proc) (number? proc) (list? proc))
+      (set! curr-def (lookup curr))
+      (if (equal? curr-def 'word-not-found)
+          (set! proc (token-is-numeric-literal curr radix))
+          (set! proc (entry-proc curr-def)))
+      (if (or (procedure? proc) (integer? proc) (list? proc))
           (set! tokenized (cons proc tokenized))
           (error 'add-new-word "unknown word in definition :;" curr pending-def))
       (set! def (cdr def)))
-    (set! dictionary (cons (cons new-word (reverse tokenized)) dictionary))))
+    (set! dictionary (cons (entry-build new-word 'user-word (reverse tokenized)) dictionary))))
 
 
 ;; These are words that can not be redefined. Their operation is
 ;; too fundamental to the assumptions in notatil.
 (define perm-words
-  '("base" "base?"
+  '(
+    ;; all your base are belong to us
+    "base" "base?"
     "hexadecimal" "hex"
     "decimal" "dec"
     "octal" "oct"
     "binary" "bin"
+
+    ;; these aren't really words, but i can't let you redefine them
     "-1" "0" "1"
-    "bye" "help" "load" "save"
-    ".""" "." """" "variable" "constant"
-    ":" ";"))
+
+    ;; running the repl
+    "bye" "help" "load" "save" "see" "block" "list" "edit"
+
+    ;; return stack manipulation
+    "r" "r@" ">r" "r>"
+    "do" "loop" "+loop" "i" "j"
+
+    ;; defining words
+    "variable" "constant"
+    "cells" "alloc"
+    ":" ";"
+    "forget" "marker"
+
+    "(" ")"
+
+    ))
 
 
 ;; These are the starting words of the notatil system.
 ;; Think of these as primities. Some can be redefined,
 ;; but you probably shouldn't do that. See perm-words
 ;; for those that can't be redefined.
+;;
+;; These are not complete dictionary entries, just the
+;; minimum information needed to built real entries via
+;; dictionary-build.
 (define core-words
   (list
-   ;; constants
-   (cons "-1" c-1) (cons "0" c0) (cons "1" c1)
 
    ;; radix related, allowing some synonyms
    (cons "base" base) (cons "base?" base?) (cons "radix" base?)
@@ -609,6 +715,14 @@ dictionary."
    (cons "dup" dup) (cons "drop" drop) (cons "swap" swap)
    (cons "over" over)
 
+   (cons "2dup" 2dup) (cons "2drop" 2drop) (cons "2swap" 2swap)
+   (cons "2over" 2over)
+
+   (cons "rot" rot)
+
+   (cons ">r" to-r) (cons "r>" from-r)
+   (cons "r@" fetch-r) (cons "r" fetch-r)
+
    ;; primitive arithmetic
    (cons "+" op+) (cons "-" op-) (cons "/" op/)
    (cons "*" op*) (cons "mod" mod) (cons "/mod" /mod)
@@ -619,6 +733,7 @@ dictionary."
    ;; simple output
    (cons ".s" dot-s) (cons "." dot) (cons "cr" cr)
    (cons "emit" emit) (cons ".#\"" dot-quote)
+   (cons ".r" dot-r)
 
    ;; simple input
    (cons "key" key)
@@ -638,11 +753,42 @@ dictionary."
 ;; were compiled with an older definition.
 (define dictionary '())
 
+;; Dictionary format is a lifo stack implemented as an
+;; consed list of pairs. All lokups are sequential. Words
+;; and variables are both stored here, but variable array
+;; symantics are still not defined.
+;;
+;; original:
+;;
+;; ( entry name . procedure ref, variable ref, or list of procedure refs)
+;;
+;; new:
+;;
+;; ( entry name . ( entry type . procedure ref, variable ref, or list of procedure refs)
+;;
+;; TODO: source of definition would be nice. this format
+;;       does not lend itself to meaningful "disassembly"
 
 ;; Variables will be stored in the dictionary as well.
 ;; This is going to require that we put type codes on
 ;; dictionary entries.
 (define entry-types '(core-word user-word user-var))
+(define (entry-name w) (car w))
+(define (entry-type w) (car (cdr w)))
+(define (entry-proc w) (cdr (cdr w)))
+(define (entry-build n t p)
+  (cons n (cons t p)))
+
+(define (dictionary-build)
+  (set! dictionary '())
+  (letrec* ((n '()) (t 'core-word) (p '())
+            (f (lambda (xs)
+                 (cond ((null? xs) )
+                       (else (set! n (car (car xs)))
+                             (set! p (cdr (car xs)))
+                             (set! dictionary (cons (entry-build n t p) dictionary))
+                             (f (cdr xs)))))))
+               (f core-words)))
 
 
 ;;;
@@ -663,10 +809,13 @@ dictionary."
 ;; 10 0 do i . loop
 ;; will print 0 to 9
 ;; i provides the current loop index to the stack.
+;; j if nested
+;; http://forth.org/svfig/Len/softstak.htm
 
 ;; begin words until loop
 ;; do the words and when until is reached, check stack for
 ;; true. if not true, run the loop again
+;;
 ;;
 ;; variable names a cell in storage
 ;; ! stores the top of the stack into the named variable
@@ -675,6 +824,7 @@ dictionary."
 ;; ? is defined as "@ ."
 ;; +! adds and stores, and could be defined as "@ + !"
 
+;; add source of definition to the dictionary entry
 
 
 ;;;
