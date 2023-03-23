@@ -6,8 +6,50 @@
 
 (define test-cases
   `(
-    (test-success "numbers just get pushed onto the stack"
-      equal? notatil-test-clear-dict '("1 2 3 4 5") '(5 4 3 2 1))
+    ;; test pushing numbers onto stack
+    (test-success
+     "numbers just get pushed onto the stack"
+      equal?
+      notatil-test-clear-dict
+      '("1 2 3 4 5")
+      '(5 4 3 2 1))
+
+    ;; test radix support
+    (test-success
+     "hex"
+     equal?
+     notatil-test-clear-dict
+     '("hex base?")
+     '(16))
+    (test-success
+     "dec"
+     equal?
+     notatil-test-clear-dict
+     '("dec base?")
+     '(10))
+    (test-success
+     "oct"
+     equal?
+     notatil-test-clear-dict
+     '("oct base?")
+     '(8))
+    (test-success
+     "bin"
+     equal?
+     notatil-test-clear-dict
+     '("bin base?")
+     '(2))
+    (test-success
+     "allows raw entry of legal base"
+     equal?
+     notatil-test-clear-dict
+     '("8 base base?")
+     '(8))
+    (test-error
+     "errors if invalid base requested"
+     notatil-test-clear-dict
+     '("6 base base?"))
+    ;; remaining tests from exercism suite to evaluate
     (test-success "can add two numbers" equal? notatil-test-clear-dict
       '("1 2 +") '(3))
     (test-error

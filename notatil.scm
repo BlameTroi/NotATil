@@ -355,15 +355,19 @@ are supported."
 ;; needed, but as the integer stack and operations are
 ;; part of the core, here they are.
 
+
 ;; Add an item to the top of the stack.
 (define (push n)
   (set! stack-data (cons n stack-data)))
 
+
 (define (push-r n)
   (set! stack-return (cons n stack-return)))
 
+
 (define (push-f n)
   (set! stack-float (cons n stack-float)))
+
 
 ;; Remove an item from the top of the stack.
 ;; checking depth should be done elsewhere, we'll
@@ -372,9 +376,11 @@ are supported."
   (let ((n (car stack-data)))
     (set! stack-data (cdr stack-data)) n))
 
+
 (define (pop-r)
   (let ((n (car stack-return)))
     (set! stack-return (cdr stack-return)) n))
+
 
 (define (pop-f)
   (let ((n (car stack-float)))
@@ -421,15 +427,25 @@ are supported."
 ;; TODO: Just where does the output go?
 ;;
 
+
 ;; .S ( ? -- ? ) Prints the entire stack leaving the
 ;;              contents unchanged.
 (define (dot-s)
   "The .s operator."
   (display (string-join (map number->string stack-data) " ")))
 
-;; .R [ ? -- ? ] Print the return stack and leave it unchanged.
+
+;; .R ( n w -- ) Print n right justified in w spaces.
+;;               If there are more digits in n than
+;;               allowed for by w, print them anyway.
 (define (dot-r)
-  (display (string-join (map number->string stack-return) " ")))
+  (check-stack 2 '.R)
+  (let ((w (pop)) (n (pop)) (s ""))
+    (set! s (number->string n radix))
+    (if (< (string-length s) w)
+      (set! s (string-pad s w)))
+    (display s)))
+
 
 ;; . ( n -- ) Prints the top of the stack in the current radix.
 (define (dot)
@@ -437,14 +453,28 @@ are supported."
   (display (number->string (pop) radix))
   (display #\space))
 
+
+;; space ( -- ) Print a single space.
+(define (space)
+  (display #\space))
+
+
+;; spaces ( n -- ) Print n spaces.
+(define (spaces)
+  (check-stack 1 'spaces)
+  (display (string-pad "" (pop))))
+
+
 ;; cr ( -- ) Prints a carriage return.
 (define (cr)
   (newline))
+
 
 ;; emit ( c -- ) Prints the top of the stack as a character.
 (define (emit)
   (check-stack 1 'emit)
   (display (integer->char (pop))))
+
 
 ;; ." ( -- ) Prints everything up to but not included a trailing
 ;;           double quote.
@@ -452,23 +482,28 @@ are supported."
 (define (dot-quote)
   (display "dot-quote not yet implemented."))
 
+
 ;; key ( -- c) Accept single character input
 (define (key)
   (display "key not yet implemented."))
 
+
 ;;
 ;; Stack manipulation words.
 ;;
+
 
 ;; DUP	( n — n n )	Duplicates the top stack item
 (define (dup)
   (check-stack 1 'dup)
   (let ((n (pop))) (push n) (push n)))
 
+
 ;; DROP	( n — )	Discards the top stack item
 (define (drop)
   (check-stack 1 'drop)
   (pop))
+
 
 ;; SWAP	( n1 n2 — n2 n1 )	Reverses the top two stack
 ;;                        items
@@ -477,21 +512,25 @@ are supported."
   (let ((n2 (pop)) (n1 (pop)))
     (push n2) (push n1)))
 
+
 ;; OVER	( n1 n2 — n1 n2 n1 )	Copies second item to top
 (define (over)
   (check-stack 2 'over)
   (let ((n2 (pop)) (n1 (pop)))
     (push n1) (push n2) (push n1)))
 
+
 ;; >r   ( n --) [ -- n ]  Move an item from data to return
 (define (to-r)
   (check-stack 1 '>r)
   (push-r (pop)))
 
+
 ;; r>   ( -- n) [ n -- ]  Move an item from return to data
 (define (from-r)
   (check-return 1 'r>)
   (push (pop-r)))
+
 
 ;; r@   ( -- n) [ n -- n] Copy an item from return to data
 ;; r    ( -- n) [ n -- n] Same as r@, an older name
@@ -510,6 +549,7 @@ are supported."
     (push n3)
     (push n1)))
 
+
 ;; 2SWAP	( d1 d2 — d2 d1 )	Reverses the top two pairs of numbers
 (define (2swap)
   (check-stack 4 '2swap)
@@ -517,12 +557,14 @@ are supported."
     (push d2b)(push d2a)
     (push d1b)(push d1a)))
 
+
 ;; 2DUP	( d — d d )	Duplicates the top pair of numbers
 (define (2dup)
   (check-stack 2 '2dup)
   (let ((da (pop)) (db (pop)))
     (push db)(push da)
     (push db)(push da)))
+
 
 ;; 2OVER	( d1 d2 — d1 d2 d1 )	Duplicates the second pair of numbers
 (define (2over)
@@ -532,10 +574,12 @@ are supported."
     (push d2b)(push d2a)
     (push d1b)(push d1a)))
 
+
 ;; 2DROP	( d1 d2 — d1 )	Discards the top pair of numbers
 (define (2drop)
   (check-stack 2 '2drop)
   (pop)(pop))
+
 
 ;;
 ;; see also http://forth.org/svfig/Len/softstak.htm
@@ -546,30 +590,36 @@ are supported."
 
 ;; primitive arithmetic. these can be redefined by the user.
 
+
 ;; –	( n1 n2 — diff )	Subtracts (n1-n2)
 (define (op-)
   (check-stack 2 '-)
   (let* ((n (pop)) (m (pop)) (r (- m n))) (push r)))
+
 
 ;; +	( n1 n2 — sum )	Adds
 (define (op+)
   (check-stack 2 '+)
   (let* ((n (pop)) (m (pop)) (r (+ m n))) (push r)))
 
+
 ;; *	( n1 n2 — prod )	Multiplies
 (define (op*)
   (check-stack 2 '*)
   (let* ((n (pop)) (m (pop)) (r (* m n))) (push r)))
+
 
 ;; /	( n1 n2 — quot )	Divides (n1/n2)
 (define (op/)
   (check-stack 2 '/)
   (let* ((n (pop)) (m (pop)) (r (quotient m n))) (push r)))
 
+
 ;; MOD	( n1 n2 — rem )	Divides; returns remainder only
 (define (mod)
   (check-stack 2 'mod)
   (let* ((n (pop)) (m (pop)) (r (remainder m n))) (push r)))
+
 
 ;; /MOD	( n1 n2 — rem quot )	Divides; returns remainder
 ;;                            and quotient
@@ -586,12 +636,20 @@ are supported."
   "Convert a real boolean to -1 for true, 0 for false."
   (if b -1 0))
 
+
+;; canonical bool ... convert any integer to a proper forth
+;; boolean.
+(define (canonical-bool n)
+  (if (= n 0) 0 -1))
+
+
 ;; <    ( n1 n2 -- n2 < n1 )
 (define (op<)
   (check-stack 2 '<)
   (let* ((n (pop)) (m (pop))
          (r (< m n)))
     (push (forth-bool r))))
+
 
 ;; =    ( n1 n2 -- n1 = n2 )
 (define (op=)
@@ -600,6 +658,7 @@ are supported."
          (r (= m n)))
     (push (forth-bool r))))
 
+
 ;; >    ( n1 n2 -- n2 > n1 )
 (define (op>)
   (check-stack 2 '>)
@@ -607,16 +666,32 @@ are supported."
          (r (> m n)))
     (push (forth-bool r))))
 
-;; >    ( n1 -- !n1)
+
+;; not   ( n1 -- !n1)
 (define (op-not)
   (check-stack 1 'not)
   (let* ((n (pop)))
     (push (forth-bool (zero? n)))))
 
 
+;; and   ( n1 n2 -- n1&n2)
+(define (op-and)
+  (check-stack 2 'and)
+  (let* ((n1 (canonical-bool (pop))) (n2 (canonical-bool (pop))))
+    (push (forth-bool (and n1 n2)))))
+
+
+;; or    ( n1 n2 -- n1|n2)
+(define (op-or)
+  (check-stack 2 'or)
+  (let* ((n1 (canonical-bool (pop))) (n2 (canonical-bool (pop))))
+    (push (forth-bool (or n1 n2)))))
+
+
 ;;;
 ;;; Dictionary lookup and addition.
 ;;;
+
 
 ;;
 ;; Returns the dictionary entry for word or 'word-not-found.
@@ -728,12 +803,14 @@ dictionary."
    (cons "*" op*) (cons "mod" mod) (cons "/mod" /mod)
 
    ;; logical operations
-   (cons "<" op<) (cons "=" op=) (cons ">" op>) (cons "not" op-not)
+   (cons "<" op<) (cons "=" op=) (cons ">" op>)
+   (cons "and" op-and) (cons "or" op-or) (cons "not" op-not)
+
 
    ;; simple output
    (cons ".s" dot-s) (cons "." dot) (cons "cr" cr)
    (cons "emit" emit) (cons ".#\"" dot-quote)
-   (cons ".r" dot-r)
+   (cons ".r" dot-r) (cons "space" space) (cons "spaces" spaces)
 
    ;; simple input
    (cons "key" key)
