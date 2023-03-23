@@ -76,7 +76,7 @@ the dictionary if it is empty. Returns the stack."
   (notatil-tokenize prog)
   stack-data)
 
-(define (notatil-test-clear-dict prog)
+(define (notatil-test-clear-dictionary prog)
   "Test entry for unit test scripting, does a full reset."
   (notatil-full-reset)
   (notatil-tokenize prog)

@@ -1,3 +1,5 @@
+;; SRFI 78 implementation from github. This is check.scm from the
+;; project repo.
 ; <PLAINTEXT>
 ; Copyright (c) 2005-2006 Sebastian Egner.
 ;
@@ -38,6 +40,11 @@
 
 ; PLT:      (require (lib "23.ss" "srfi") (lib "42.ss" "srfi"))
 ; Scheme48: ,open srfi-23 srfi-42
+
+;; Guile:
+
+;; (use-modules (srfi srfi-23))  ;; error, this is always there in Guile
+(use-modules (srfi srfi-42)) ;; comprehensions, not loaded by default
 
 ; -- utilities --
 
