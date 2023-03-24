@@ -496,7 +496,8 @@ are supported."
 ;; DUP	( n — n n )	Duplicates the top stack item
 (define (dup)
   (check-stack 1 'dup)
-  (let ((n (pop))) (push n) (push n)))
+  (let ((n (pop)))
+    (push n) (push n)))
 
 
 ;; DROP	( n — )	Discards the top stack item
@@ -526,19 +527,19 @@ are supported."
   (push-r (pop)))
 
 
-;; r>   ( -- n) [ n -- ]  Move an item from return to data
+;; r>   ( -- n1) [ n1 -- ]  Move an item from return to data
 (define (from-r)
   (check-return 1 'r>)
   (push (pop-r)))
 
 
-;; r@   ( -- n) [ n -- n] Copy an item from return to data
-;; r    ( -- n) [ n -- n] Same as r@, an older name
+;; r@   ( -- n1) [ n1 -- n1] Copy an item from return to data
+;; r    ( -- n1) [ n1 -- n1] Same as r@, an older name
 (define (fetch-r)
   (check-return 1 'r@)
-  (let ((n (pop-r)))
-    (push n)
-    (push-r n)))
+  (let ((n1 (pop-r)))
+    (push n1)
+    (push-r n1)))
 
 
 ;; ROT	( n1 n2 n3 — n2 n3 n1 )	Rotates third item to top
@@ -553,26 +554,26 @@ are supported."
 ;; 2SWAP	( d1 d2 — d2 d1 )	Reverses the top two pairs of numbers
 (define (2swap)
   (check-stack 4 '2swap)
-  (let ((d2a (pop)) (d2b (pop)) (d1a (pop)) (d1b (pop)))
-    (push d2b)(push d2a)
-    (push d1b)(push d1a)))
+  (let ((d2b (pop)) (d2a (pop)) (d1b (pop)) (d1a (pop)))
+    (push d2a)(push d2b)
+    (push d1a)(push d1b)))
 
 
 ;; 2DUP	( d — d d )	Duplicates the top pair of numbers
 (define (2dup)
   (check-stack 2 '2dup)
   (let ((da (pop)) (db (pop)))
-    (push db)(push da)
-    (push db)(push da)))
+    (push da)(push db)
+    (push da)(push db)))
 
 
 ;; 2OVER	( d1 d2 — d1 d2 d1 )	Duplicates the second pair of numbers
 (define (2over)
   (check-stack 4 '2over)
-  (let ((d2a (pop)) (d2b (pop)) (d1a (pop)) (d1b (pop)))
-    (push d1b)(push d1a)
-    (push d2b)(push d2a)
-    (push d1b)(push d1a)))
+  (let ((d2b (pop)) (d2a (pop)) (d1b (pop)) (d1a (pop)))
+    (push d1a)(push d1b)
+    (push d2a)(push d2b)
+    (push d1a)(push d1b)))
 
 
 ;; 2DROP	( d1 d2 — d1 )	Discards the top pair of numbers
@@ -594,38 +595,50 @@ are supported."
 ;; –	( n1 n2 — diff )	Subtracts (n1-n2)
 (define (op-)
   (check-stack 2 '-)
-  (let* ((n2 (pop)) (n1 (pop)) (r (- n1 n2))) (push r)))
+  (let* ((n2 (pop)) (n1 (pop))
+         (r (- n1 n2)))
+    (push r)))
 
 
 ;; +	( n1 n2 — sum )	Adds
 (define (op+)
   (check-stack 2 '+)
-  (let* ((n2 (pop)) (n1 (pop)) (r (+ n1 n2))) (push r)))
+  (let* ((n2 (pop)) (n1 (pop))
+         (r (+ n1 n2)))
+    (push r)))
 
 
 ;; *	( n1 n2 — prod )	Multiplies
 (define (op*)
   (check-stack 2 '*)
-  (let* ((n2 (pop)) (n1 (pop)) (r (* n1 n2))) (push r)))
+  (let* ((n2 (pop)) (n1 (pop))
+         (r (* n1 n2)))
+    (push r)))
 
 
 ;; /	( n1 n2 — quot )	Divides (n1/n2)
 (define (op/)
   (check-stack 2 '/)
-  (let* ((n2 (pop)) (n1 (pop)) (r (quotient n1 n2))) (push r)))
+  (let* ((n2 (pop)) (n1 (pop))
+         (r (quotient n1 n2)))
+    (push r)))
 
 
 ;; MOD	( n1 n2 — rem )	Divides; returns remainder only
 (define (mod)
   (check-stack 2 'mod)
-  (let* ((n2 (pop)) (n1 (pop)) (r (remainder n1 n2))) (push r)))
+  (let* ((n2 (pop)) (n1 (pop))
+         (r (remainder n1 n2)))
+    (push r)))
 
 
 ;; /MOD	( n1 n2 — rem quot )	Divides; returns remainder
 ;;                            and quotient
 (define (/mod)
   (check-stack 2 '/mod)
-  (let* ((n2 (pop)) (n1 (pop)) (r (remainder n1 n2)) (q (quotient n1 n2))) (push q) (push r)))
+  (let* ((n2 (pop)) (n1 (pop))
+         (r (remainder n1 n2)) (q (quotient n1 n2)))
+    (push q) (push r)))
 
 
 
@@ -653,32 +666,73 @@ converted to the proper true value of -1."
 ;; <    ( n1 n2 -- n2 < n1 )
 (define (op<)
   (check-stack 2 '<)
-  (let* ((n (pop)) (m (pop))
-         (r (< m n)))
+  (let* ((n2 (pop)) (n1 (pop))
+         (r (< n1 n2)))
     (push (forth-bool r))))
 
 
 ;; =    ( n1 n2 -- n1 = n2 )
 (define (op=)
   (check-stack 2 '=)
-  (let* ((n (pop)) (m (pop))
-         (r (= m n)))
+  (let* ((n2 (pop)) (n1 (pop))
+         (r (= n2 n1)))
+    (push (forth-bool r))))
+
+
+;; <> ( n1 n2 -- n1 != n2 )
+(define (op<>)
+  (check-stack 2 '<>)
+  (let* ((n2 (pop)) (n1 (pop))
+         (r (not (= n1 n2))))
     (push (forth-bool r))))
 
 
 ;; >    ( n1 n2 -- n2 > n1 )
 (define (op>)
   (check-stack 2 '>)
-  (let* ((n (pop)) (m (pop))
-         (r (> m n)))
+  (let* ((n2 (pop)) (n1 (pop))
+         (r (> n1 n2)))
     (push (forth-bool r))))
 
 
-;; not   ( n -- !n)
+;; 0= ( n1 -- n1 = 0)
+(define (op0=)
+  (check-stack 1 '0=)
+  (let* ((n1 (pop))
+        (r (= 0 n1)))
+    (push (forth-bool r))))
+
+
+;; 0< ( n1 -- n1 < 0)
+(define (op0<)
+  (check-stack 1 '0<)
+  (let* ((n1 (pop))
+        (r (< n1 0)))
+    (push (forth-bool r))))
+
+
+;; 0> ( n1 -- n1 > 0)
+(define (op0>)
+  (check-stack 1 '0>)
+  (let* ((n1 (pop))
+        (r (> n1 0)))
+    (push (forth-bool r))))
+
+
+;; ?DUP ( n1 -- n1 n1 ) but only if n1 is not zero
+(define (?dup)
+  (check-stack 1 '?dup)
+  (let* ((n1 (pop))
+         (r (not (zero? n1))))
+    (push n1)
+    (if r (push n1))))
+
+
+;; not   ( n1 -- !n1)
 (define (op-not)
   (check-stack 1 'not)
-  (let* ((n (pop)))
-    (push (forth-bool (zero? n)))))
+  (let* ((n1 (pop)))
+    (push (forth-bool (zero? n1)))))
 
 
 ;; and   ( n1 n2 -- n1&n2)
@@ -691,7 +745,7 @@ converted to the proper true value of -1."
 ;; or    ( n1 n2 -- n1|n2)
 (define (op-or)
   (check-stack 2 'or)
-  (let* ((n1 (canonical-bool (pop))) (n2 (canonical-bool (pop))))
+  (let* ((n2 (canonical-bool (pop))) (n1 (canonical-bool (pop))))
     (push (forth-bool (or (scheme-bool n1) (scheme-bool n2))))))
 
 
@@ -801,6 +855,7 @@ dictionary."
    (cons "2over" 2over)
 
    (cons "rot" rot)
+   (cons "?dup" ?dup)
 
    (cons ">r" to-r) (cons "r>" from-r)
    (cons "r@" fetch-r) (cons "r" fetch-r)
@@ -810,9 +865,9 @@ dictionary."
    (cons "*" op*) (cons "mod" mod) (cons "/mod" /mod)
 
    ;; logical operations
-   (cons "<" op<) (cons "=" op=) (cons ">" op>)
+   (cons "<" op<) (cons "=" op=) (cons ">" op>) (cons "<>" op<>)
+   (cons "0>" op0>) (cons "0<" op0<) (cons "0=" op0=)
    (cons "and" op-and) (cons "or" op-or) (cons "not" op-not)
-
 
    ;; simple output
    (cons ".s" dot-s) (cons "." dot) (cons "cr" cr)
@@ -909,6 +964,105 @@ dictionary."
 ;; +! adds and stores, and could be defined as "@ + !"
 
 ;; add source of definition to the dictionary entry
+
+;; disk usage and dictionary cleanout from forth brodie site
+;; USE xxx
+;; USING xxx	( –)	Use file xxx as Forth “disk”
+;; LIST	( n — )	Lists a disk block
+;; LOAD	( n — )	Loads a disk block
+;; ( xxx)	( — )	Ignores text up to “)” delimeter
+;; UPDATE	( — )	Mark most recent block as updated
+;; EMPTY-BUFFERS	( — )	Marks all block buffers as empty
+;; BLOCK	( n — addr )	Return address of buffer for block n
+;; INCLUDE xxx	( — )	Load the text file xxx
+;; FORGET xxx	( — )	Forget definitions back through xxx
+;; MARKER xxx	( — )	Defines marker xxx to roll back dictionary
+
+;; initial logic and decisions from forth brodie site
+;; IF( flag — )
+;; If flag is true (non-zero) executes xxx; otherwise executes yyy; continues execution with zzz. The phrase ELSE yyy is optional.
+;; IF xxx THEN zzz
+;; IF xxx ELSE yyy THEN zzz
+;; =( n1 n2 — flag )
+;; Returns true if n1 and n2 are equal.
+;; <>( n1 n2 — flag )
+;; Returns true if n1 and n2 are not equal.
+;; <( n1 n2 — flag )
+;; Returns true if n1 is less than n2.
+;; >( n1 n2 — flag )
+;; Returns true if n1 is greater than n2.
+;; U<( u1 u2 — flag )
+;; Returns true if u1 is less than u2.
+;; U>( n1 n2 — flag )
+;; Returns true if u1 is greater than u2.
+;; 0=( n — flag )
+;; Returns true if n is zero.
+;; 0<( n — flag )
+;; Returns true if n is negative.
+;; 0>( n — flag )
+;; Returns true if n is positive.
+;; AND( n1 n2 — n3 )
+;; Returns the logical AND.
+;; OR( n1 n2 — n3 )
+;; Returns the logical OR.
+;; ?DUP( n — n n ) or ( 0 — 0 )
+;; Duplicates only if n is non-zero.
+;; ABORT” xx”( flag — )
+;; If the flag is true, types out an error message, followed by the text. Also clears the stacks and returns control to the terminal. If false, takes no action.
+
+;; fixed point in greater detail from forth brodie
+;; 1+( n1 — n2 )
+;; Adds one.
+;; 1-( n1 — n2 )
+;; Subtracts one.
+;; 2+( n1 — n2 )
+;; Adds two.
+;; 2-( n1 — n2 )
+;; Subtracts two.
+;; 2*( n1 — n2 )
+;; Multiplies by two (arithmetic left shift).
+;; 2/( n1 — n2 )
+;; Divides by two (arithmetic right shift).
+;; ABS( n1 — n2 )
+;; Returns the absolute value.
+;; NEGATE( n1 — n2 )
+;; Changes the sign.
+;; MIN( n1 n2 — n3 )
+;; Returns the minimum.
+;; MAX( n1 n2 — n3 )
+;; Returns the maximum.
+;; >R( n — )
+;; Takes a value off the parameter stack and pushes it onto the return stack.
+;; R>( — n )
+;; Takes a value off the return stack and pushes it onto the parameter stack.
+;; R@( — n )
+;; Copies the top item from return stack and pushes it onto the parameter stack.
+;; */( n1 n2 n3 — n4 )
+;; Multiplies, then divides (n1*n2/n3). Uses a double-length intermediate result.
+;; */MOD( n1 n2 n3 — n4 n5 )
+;; Multiplies, then divides (n1*n2/n3). Returns the remainder (n4) and the quotient (n5). Uses a double-length intermediate result.
+
+
+;;;
+;;; Table of handy approximations from Forth book, fixed point ways to use
+;;; floating point constants.
+;;;
+
+;; so a forth word for these would look like ...
+;; : *pi ( n1 -- n1*pi ) 355 * 113 / ;
+;;   Number          Approximation            Error
+;; π = 3.141 …       355 / 113                8.5 x 10-8
+;; π = 3.141 …       1068966896 / 340262731   3.0 x 10-18
+;; √2 = 1.414 …      19601 / 13860            1.5 x 10-9
+;; √3 = 1.732 …      18817 / 10864            1.1 x 10-9
+;; e = 2.718 …       28667 / 10546            5.5 x 10-9
+;; √10 = 3.162 …     22936 / 7253             5.7 x 10-9
+;; 12√2 = 1.059 …    26797 / 25293            1.0 x 10-9
+;; log(2) / 1.6384 = 0.183 …      2040 / 11103  1.1 x 10-8
+;; ln(2) / 16.384 = 0.042 …       485 / 11464   1.0 x 10-7
+
+;; the 10-blah are "10 raised to -blah" so 8.5e-8 is the error on first pi
+
 
 
 ;;;

@@ -41,6 +41,19 @@
 (check (nat "0 1 over") => '(0 1 0)) ;; copy second element to top
 (check (nat "1 2 3 4 rot") => '(2 4 3 1)) ;; rotate top 3 items
 
+;; return stack manipulation
+(check (nat "1 >r") => '()) ;; kinda hard to test since return stack is not returned
+(check (nat "1 >r r>") => '(1)) ;; but this shows to and from r
+(check (nat "1 >r r@ r>") => '(1 1)) ;; fetch r is a copy, so this should copy then move
+
+;; i don't think we'll really use the double
+;; precision integer words, but testing anyway
+;; msw under lsw on stack is how i envision it
+(check (nat "1 2 3 2drop") => '(1))
+(check (nat "11 12 21 22 2swap") => '(12 11 22 21))
+(check (nat "11 12 21 22 2over") => '(12 11 22 21 12 11))
+(check (nat "11 12 21 22 2drop") => '(12 11))
+
 ;; test base support
 (check (nat "hex 10") => '(16))
 (check (nat "dec 10") => '(10))
@@ -64,6 +77,18 @@
 (check (nat "0 -1 or") => '(-1))   ;; more trues
 (check (nat "-1 -1 or") => '(-1))  ;;
 (check (nat "0 0 or") => '(0))     ;;
+
+;; test simple relationals
+(check (nat "1 2 <") => '(-1))
+(check (nat "1 2 =") => '(0))
+(check (nat "1 2 >") => '(0))
+(check (nat "1 0<") => '(0))
+(check (nat "1 0=") => '(0))
+(check (nat "1 0>") => '(-1))
+(check (nat "0 ?dup") => '(0))
+(check (nat "1 ?dup") => '(1 1))
+
+
 
 (check-report)
 
