@@ -594,54 +594,61 @@ are supported."
 ;; –	( n1 n2 — diff )	Subtracts (n1-n2)
 (define (op-)
   (check-stack 2 '-)
-  (let* ((n (pop)) (m (pop)) (r (- m n))) (push r)))
+  (let* ((n2 (pop)) (n1 (pop)) (r (- n1 n2))) (push r)))
 
 
 ;; +	( n1 n2 — sum )	Adds
 (define (op+)
   (check-stack 2 '+)
-  (let* ((n (pop)) (m (pop)) (r (+ m n))) (push r)))
+  (let* ((n2 (pop)) (n1 (pop)) (r (+ n1 n2))) (push r)))
 
 
 ;; *	( n1 n2 — prod )	Multiplies
 (define (op*)
   (check-stack 2 '*)
-  (let* ((n (pop)) (m (pop)) (r (* m n))) (push r)))
+  (let* ((n2 (pop)) (n1 (pop)) (r (* n1 n2))) (push r)))
 
 
 ;; /	( n1 n2 — quot )	Divides (n1/n2)
 (define (op/)
   (check-stack 2 '/)
-  (let* ((n (pop)) (m (pop)) (r (quotient m n))) (push r)))
+  (let* ((n2 (pop)) (n1 (pop)) (r (quotient n1 n2))) (push r)))
 
 
 ;; MOD	( n1 n2 — rem )	Divides; returns remainder only
 (define (mod)
   (check-stack 2 'mod)
-  (let* ((n (pop)) (m (pop)) (r (remainder m n))) (push r)))
+  (let* ((n2 (pop)) (n1 (pop)) (r (remainder n1 n2))) (push r)))
 
 
 ;; /MOD	( n1 n2 — rem quot )	Divides; returns remainder
 ;;                            and quotient
 (define (/mod)
   (check-stack 2 '/mod)
-  (let* ((n (pop)) (m (pop)) (r (remainder m n)) (q (quotient m n))) (push q) (push r)))
+  (let* ((n2 (pop)) (n1 (pop)) (r (remainder n1 n2)) (q (quotient n1 n2))) (push q) (push r)))
+
+
+
+;; Casting booleans between Forth (-1, 0) and Scheme (#t, #f).
+;; Also make sure a Forth true value is -1.
+
+(define (canonical-bool n)
+  "Anything not zero in Forth is true and should be
+converted to the proper true value of -1."
+  (if (= n 0) 0 -1))
+
+(define (forth-bool b)
+  "Convert a Scheme #t or #f to -1 or 0."
+  (if b -1 0))
+
+(define (scheme-bool n)
+  "Convert a Forth -1 or 0 to #t or #f."
+  (if (zero? n) #f #t))
 
 
 ;; Logical and relational operators. As in C or Forth,
 ;; 0 is false and anything else is true. Forth returns
 ;; -1 from its relational checks.
-
-(define (forth-bool b)
-  "Convert a real boolean to -1 for true, 0 for false."
-  (if b -1 0))
-
-
-;; canonical bool ... convert any integer to a proper forth
-;; boolean.
-(define (canonical-bool n)
-  (if (= n 0) 0 -1))
-
 
 ;; <    ( n1 n2 -- n2 < n1 )
 (define (op<)
@@ -667,7 +674,7 @@ are supported."
     (push (forth-bool r))))
 
 
-;; not   ( n1 -- !n1)
+;; not   ( n -- !n)
 (define (op-not)
   (check-stack 1 'not)
   (let* ((n (pop)))
@@ -677,15 +684,15 @@ are supported."
 ;; and   ( n1 n2 -- n1&n2)
 (define (op-and)
   (check-stack 2 'and)
-  (let* ((n1 (canonical-bool (pop))) (n2 (canonical-bool (pop))))
-    (push (forth-bool (and n1 n2)))))
+  (let* ((n2 (canonical-bool (pop))) (n1 (canonical-bool (pop))))
+    (push (forth-bool (and (scheme-bool n1) (scheme-bool n2))))))
 
 
 ;; or    ( n1 n2 -- n1|n2)
 (define (op-or)
   (check-stack 2 'or)
   (let* ((n1 (canonical-bool (pop))) (n2 (canonical-bool (pop))))
-    (push (forth-bool (or n1 n2)))))
+    (push (forth-bool (or (scheme-bool n1) (scheme-bool n2))))))
 
 
 ;;;

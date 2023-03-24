@@ -11,12 +11,59 @@
 ;;
 ;; Testing notatil
 ;;
+;; srfi 78 doesn't provide a check-error yet, so we can only test things
+;; that don't throw errors. So, typos and mismanaging the stack can't be
+;; tested well. We'll test words and behavior for correctness then, not
+;; error handling.
+;;
 (load "notatil.scm")
 (define nat notatil-test-clear-dictionary)
 
 ;; quick test is it up and somewhat functional
+(check (nat "1 2 3") => '(3 2 1)) ;; stack works
 (check (nat "1 1 +") => '(2)) ;; simple success
-(check (nat "1 1 +") => '(3)) ;; simple failure
+
+;; test basic integer math
+(check (nat "1 2 +") => '(3))     ;; +	( n1 n2 — sum )	Adds
+(check (nat "1 2 -") => '(-1))    ;; –	( n1 n2 — diff )	Subtracts (n1-n2)
+(check (nat "2 1 -") => '(1))     ;; ordering confirmed
+(check (nat "10 5 *") => '(50))   ;; *	( n1 n2 — prod )	Multiplies
+(check (nat "10 5 /") => '(2))    ;;	( n1 n2 — quot )	Divides (n1/n2)
+(check (nat "5 10 /") => '(0))    ;; watch for fractions
+(check (nat "2 3 /") => '(0))     ;; modulo stuff
+(check (nat "2 3 mod") => '(2))   ;; remainder of 2 / 3
+(check (nat "2 3 /mod") => '(2 0)) ;; remainder and quotient
+
+;; test simple stack manipulation
+(check (nat "0 1 swap") => '(0 1))   ;; swap top two elements
+(check (nat "3 dup") => '(3 3))      ;; duplicate top entry
+(check (nat "1 2 3 drop") => '(2 1)) ;; drop top entry
+(check (nat "0 1 over") => '(0 1 0)) ;; copy second element to top
+(check (nat "1 2 3 4 rot") => '(2 4 3 1)) ;; rotate top 3 items
+
+;; test base support
+(check (nat "hex 10") => '(16))
+(check (nat "dec 10") => '(10))
+(check (nat "oct 10") => '(8))
+(check (nat "bin 10") => '(2))
+(check (nat "hex f0") => '(240))
+(check (nat "oct 77") => '(63))
+(check (nat "bin 1101") => '(13))
+
+;; test simple booleans
+(check (nat "-1 not") => '(0))    ;; -1 is true, 0 is false
+(check (nat "0 not")  => '(-1))   ;; actually anything not false
+(check (nat "14 not") => '(0))    ;; is true
+
+(check (nat "-1 0 and") => '(0))   ;; true and false should be false
+(check (nat "0 -1 and") => '(0))   ;; regardless of order
+(check (nat "-1 -1 and") => '(-1)) ;; true and true should be true
+(check (nat "0 0 and") => '(0))    ;; and of course true and false is false
+
+(check (nat "-1 0 or") => '(-1))   ;; same sequence as and, but we get
+(check (nat "0 -1 or") => '(-1))   ;; more trues
+(check (nat "-1 -1 or") => '(-1))  ;;
+(check (nat "0 0 or") => '(0))     ;;
 
 (check-report)
 
