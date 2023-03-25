@@ -7,6 +7,9 @@ help :
 
 check-all : new
 
+tok :
+	$(guile) testtok.scm $(solution)
+
 new :
 	$(guile) test.scm $(solution)
 

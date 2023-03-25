@@ -17,7 +17,7 @@
 ;; error handling.
 ;;
 (load "notatil.scm")
-(define nat notatil-test-clear-dictionary)
+(define nat nat-test-clear-dictionary)
 
 ;; quick test is it up and somewhat functional
 (check (nat "1 2 3") => '(3 2 1)) ;; stack works
@@ -86,7 +86,7 @@ a Forth string, and add blanks to either end of the incoming string."
         (set! accum (cons #\space accum)))
     (list->string (reverse accum))))
 
-(define (nat-tokenize s)
+(define (nat-tokenizer s)
   "Return tokens from string S as a list of (type . text) pairs."
   (set! s (nat-scrub s))
   (if (not (null? (nat-has-definitions s)))
@@ -100,7 +100,7 @@ a Forth string, and add blanks to either end of the incoming string."
                        ((and num (inexact? (token-is-numeric-literal t radix))) (cons 'nat-tok-real t))
                        ((not (equal? 'word-not-found (lookup t))) (cons 'nat-tok-word t))
                        (else (cons 'nat-tok-unknown t)))))
-             (string-split s (char-set #\space))
+             (filter (lambda (t) (string<> t "")) (string-split s (char-set #\space)))
              ;;
              ))))
 
@@ -116,14 +116,15 @@ a Forth string, and add blanks to either end of the incoming string."
 (check (nat-scrub (list->string '(#\tab #\1 #\space #\tab #\tab #\2 #\nl #\tab #\+ #\nl))) => " 1 2 + ")
 
 ;; clean text in
-(check (nat-tokenize "1 2 +") => '((nat-tok-integer . "1") (nat-tok-integer . "2") (nat-tok-word . "+")))
+(check (nat-tokenizer "1 2 +") => '((nat-tok-integer . "1") (nat-tok-integer . "2") (nat-tok-word . "+")))
 
 ;; extra white space
-(check (nat-tokenize "1    2 .     ") => '((nat-tok-integer . "1") (nat-tok-integer . "2") (nat-tok-word . ".")))
+(check (nat-tokenizer "1    2 .     ") => '((nat-tok-integer . "1") (nat-tok-integer . "2") (nat-tok-word . ".")))
 
 ;; just a comment
-(check (nat-tokenize "( n1 n2 -- n1 * n2 ) ") => '((nat-comment . "( n1 n2 -- n1 * n2 )")))
+(check (nat-tokenizer "( n1 n2 -- n1 * n2 ) ") => '((nat-comment . "( n1 n2 -- n1 * n2 )")))
 
+;;;; be sure to test : foo 5; as opposed to : foo 5 ;
 
 
 ;; final report

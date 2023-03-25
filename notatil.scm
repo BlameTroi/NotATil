@@ -40,66 +40,84 @@
 ;; manner: sequentially from newest to oldest. Most,
 ;; but not all, words can be redefined.
 
+;;;
+;;; Globals that aren't stacks or dictionary.
+;;;
+;; Global state may be bad, but I don't want to be good
+
+(define nat-buffer "")
+(define nat-status "enter help for basic help.")
+(define nat-error "?")
+(define nat-compiling #f)
+(define nat-terminating #f)
+(define nat-pending-def '())
+
 
 ;;
 ;; This is the top level for an interative session. Loop
 ;; until the user enters "bye".
 ;;
-;; Note that readline and emacs with geiser don't play well
-;; together so readline is not activated by default. Use
-;; the notatil-test function for testing under geiser.
+;; Note that readline and emacs with geiser don't play
+;; well together so readline is not activated by default.
+;; Use the nat-test functions for testing under geiser.
 ;;
-(define (notatil-termsess)
+(define (nat-repl)
   "The top level for a terminal interaction."
-  (notatil-full-reset)
-  (let ((cmdline "")
-        (status "enter help for basic help."))
-    (notatil-completion-status status)
-    (set! cmdline (notatil-prompt))
-    (while (not byebye)
-      (notatil-tokenize cmdline) ;; needs more
-      ;; to be provided
-      (set! status " ok ")
-      (notatil-completion-status status)
-      (if (not byebye)
-          (set! cmdline (notatil-prompt)))))
+  (nat-full-reset)
+  (nat-display-status)
+  (nat-prompt-read)
+  (while (not nat-terminating)
+    (nat-tokenize nat-buffer) ;; needs more
+    ;; to be provided
+    (set! nat-status " ok ")
+    (nat-display-status)
+    (if (not nat-terminating)
+        (nat-prompt-read)))
   (newline))
 
 
 ;;
 ;; This is the top level for testing. Call with a string
-;; argument holding notatil code. This will allow scriptable
-;; testing and simple debugging.
+;; argument holding notatil code. This will allow
+;; scriptable testing and simple debugging.
 ;;
-(define (notatil-test prog)
+(define (nat-test prog)
   "Evaluate a command line for testing. Only initializes
 the dictionary if it is empty. Returns the stack."
-  (notatil-test-reset)
-  (notatil-tokenize prog)
+  (nat-test-reset)
+  (nat-tokenize prog)
   stack-data)
 
-(define (notatil-test-clear-dictionary prog)
+(define (nat-test-clear-dictionary prog)
   "Test entry for unit test scripting, does a full reset."
-  (notatil-full-reset)
-  (notatil-tokenize prog)
+  (nat-full-reset)
+  (nat-tokenize prog)
   stack-data)
 
 ;;;
 ;;; User interaction helpers
 ;;;
 
-(define (notatil-prompt)
-  "Display prompt to the user and accept commands."
-  (readline "> "))
+(define (nat-prompt-read)
+  "Display prompt to the user and accept commands into
+the global buffer."
+  (set! nat-buffer (readline "> ")))
 
 
-(define (notatil-completion-status status)
+(define (nat-prompt-more)
+  "Display prompt to the user for continuation of commands
+and append to global buffer."
+  (set! nat-buffer (string-append nat-buffer (readline "+ "))))
+
+
+(define (nat-display-status)
   "Display the status of the last commands and report
 the length of the stack to the user."
-  (display status)
+  (display nat-status)
   (if (> (length stack-data) 0)
       (display (length stack-data)))
   (newline))
+
 
 ;;;
 ;;; Parse, evaluate, compile to dictionary, and
@@ -108,39 +126,53 @@ the length of the stack to the user."
 
 
 ;;
-;; The rules for tokenizing a Forth style language are dead
-;; simple. Whitespace separates tokens. There are no special
-;; characters.
+;; The rules for tokenizing a Forth style language are
+;; dead simple: Whitespace separates tokens.
+;;
+;; There are no special characters in the traditional
+;; sense, but some token sequences will set expectations
+;; for subsequent tokens, as in the : name def ; form,
+;; if else then, ." string" and so on.
+;;
+;; Early on the tokenize and parse is pretty much just
+;; split on whitespace, but of course nothing is ever
+;; as easy as it first appears.
 ;;
 
 ;;
-;; Break the input into tokens. The string-split functin can
-;; return empty string tokens if multiple delimiters are read
-;; in succession but the evaluator ignores them.
+;; Break the input into tokens. The string-split functin
+;; can return empty string tokens if multiple delimiters
+;; are read in succession but the evaluator ignores them.
 ;;
 
-(define (notatil-tokenize prog)
-  (map notatil-eval
-       (string-split prog (char-set #\space #\tab #\nl))))
+(define (nat-tokenize prog)
+  (map
+   nat-eval
+   (filter
+    (lambda (t) (string<> "" t))
+    (string-split prog (char-set #\space #\tab #\nl)))))
 
 ;;
-;; Evaluate a token (or word) from the command line. For simple
-;; operators (stack manipulation, numeric literals, numeric or
-;; relational operators) the execution is immediate. Either push
-;; the literal onto the stack or execute the word's definition.
+;; Evaluate a token (or word) from the command line. For
+;; simple operators (stack manipulation, numeric literals,
+;; numeric or relational operators) the execution is
+;; immediate. Either push the literal onto a stack or
+;; execute the word's definition.
 ;;
-;; Every incoming token is checked against the dictionary. If it
-;; is found, the definition is kept for execution or inclusion
-;; in a future definition.
+;; Every incoming token is checked against the dictionary.
+;; If it is found, the definition is kept for execution
+;; or inclusion in a future definition.
 ;;
-;; If a new word is being defined via the : newword definition ;
-;; syntax, execution is suspended and instead the literals or
-;; word functions are buffered until the definition is complete.
-;; Then the new word and its definition are added to the front
-;; of the dictionary.
+;; If a new word is being defined via the : newword
+;; definition ; syntax, execution is suspended and
+;; instead the literals or word functions are buffered
+;; until the definition is complete.
 ;;
-(define (notatil-eval word)
-   (let ((definition (lookup word)))
+;; Then the new word and its definition are added to the
+;; front of the dictionary.
+;;
+(define (nat-eval word)
+  (let ((definition (lookup word)))
     (cond
      ;; empty string happens when multiple delimiters hit on split
      ((string= "" word) )
@@ -152,7 +184,7 @@ the length of the stack to the user."
      ;; but there are some critical exceptions in the
      ;; in the perm-words list.
      ((string= ":" word)
-      (set! compiling #t)
+      (set! nat-compiling #t)
       (set! pending-def '()))
 
      ((string= ";" word)
@@ -161,15 +193,15 @@ the length of the stack to the user."
           (error 'feval "can not redefine a numeric literal via :;"
                  (car pending-def) radix (cdr pending-def)))
       (add-new-word pending-def)
-      (set! compiling #f))
+      (set! nat-compiling #f))
 
-     (compiling
+     (nat-compiling
       (set! pending-def (cons word pending-def)))
 
      ;; once the user says bye, skip until end
      ((string-ci= "bye" word)
-      (set! byebye #t))
-     (byebye )
+      (set! nat-terminating #t))
+     (nat-terminating )
 
      ;; word found in dictionaries?
      ;; idea around definitions is that any user word
@@ -178,7 +210,7 @@ the length of the stack to the user."
      ;; of the current word. older words use older
      ;; definitions.
      ((not (equal? 'word-not-found definition))
-      (notatil-execute word (entry-proc definition)))
+      (nat-execute word (entry-proc definition)))
 
      ;; number in supported radix?
      ((not (equal? #f (token-is-numeric-literal word radix)))
@@ -187,20 +219,22 @@ the length of the stack to the user."
      ;; I'm sorry Dave, I can't do that
 
      (else
-      (error 'notatil-eval
+      (error 'nat-eval
              "unknown or undefined word"
              word radix stack-data)))))
 
 
 ;;
-;; The evaluation process above looks up a word in the dictionary to
-;; find its definition. For built in words such as SWAP or DUP, the
-;; definition is a single procedure reference to the Scheme function
-;; that implements the word. User defined words are stored as lists
-;; of procedure references. A user defined word can include numeric
-;; literals and they are pushed directly onto the stack.
+;; The evaluation process above looks up a word in the
+;; dictionary to find its definition. For built in words
+;; such as SWAP or DUP, the definition is a single
+;; procedure reference to the Scheme function that
+;; implements the word. User defined words are stored as
+;; lists of procedure references. A user defined word can
+;; include numeric literals and they are pushed directly
+;; onto the stack.
 ;;
-(define (notatil-execute word proc)
+(define (nat-execute word proc)
   "Execute WORD by running it's DEFINITION."
   (cond
    ((null? proc) )
@@ -209,10 +243,10 @@ the length of the stack to the user."
    ((integer? proc)
     (push proc))
    ((list? proc)
-    (notatil-execute word (car proc))
-    (notatil-execute word (cdr proc)))
+    (nat-execute word (car proc))
+    (nat-execute word (cdr proc)))
    (else
-    (error 'notatil-execute
+    (error 'nat-execute
            "error in word definition"
            word proc))))
 
@@ -220,36 +254,36 @@ the length of the stack to the user."
 ;; Reset the environment to a known initial state. Clear
 ;; stacks, restore starting dictionary, set any globals,
 ;; and return to base 10.
-(define (notatil-full-reset)
+(define (nat-full-reset)
   "Reset the environment to a clean state."
   (clear-stacks)
   (dictionary-build)
-  (set! compiling #f)
-  (set! byebye #f)
-  (set! pending-def '())
+  (set! nat-compiling #f)
+  (set! nat-terminating #f)
+  (set! nat-buffer "")
+  (set! nat-status "enter help for basic help.")
+  (set! nat-error "?")
+  (set! nat-pending-def '())
   (base-dec))
 
 
 ;; Reset the environment for testing. Protects any
 ;; updates to the dictionary made on prior calls, if
 ;; any.
-(define (notatil-test-reset)
+(define (nat-test-reset)
   "Reset everything but the dictionary for testing."
   (clear-stacks)
   (if (zero? (length dictionary))
       (dictionary-build))
-  (set! compiling #f)
-  (set! byebye #f)
-  (set! pending-def '())
+  (set! nat-compiling #f)
+  (set! nat-terminating #f)
+  (set! nat-buffer "")
+  (set! nat-status "enter help for basic help.")
+  (set! nat-error "?")
+  (set! nat-pending-def '())
   (base-dec))
 
 
-;;;
-;;; Globals that aren't stacks or dictionary.
-;;;
-
-(define compiling #f)
-(define byebye #f)
 
 
 ;;;
@@ -421,19 +455,21 @@ are supported."
        sym n (length stack-float) stack-float)))
 
 
-;;
-;; Simple output.
-;;
-;; TODO: Radix support on number->string
-;; TODO: Just where does the output go?
-;;
+;;;
+;;; Simple output.
+;;;
 
 
 ;; .S ( ? -- ? ) Prints the entire stack leaving the
-;;              contents unchanged.
+;;               contents unchanged. Note that the top
+;;               of the stack is to the right.
 (define (dot-s)
-  "The .s operator."
-  (display (string-join (map number->string stack-data) " ")))
+  "Non-destructive print of the data stack."
+  (display
+   (string-join
+    (map (lambda (s) (number->string s radix))
+         (reverse stack-data))
+    " ")))
 
 
 ;; .R ( n w -- ) Print n right justified in w spaces.
@@ -448,7 +484,8 @@ are supported."
     (display s)))
 
 
-;; . ( n -- ) Prints the top of the stack in the current radix.
+;; . ( n -- ) Prints the top of the stack in the current
+;;            radix.
 (define (dot)
   (check-stack 1 '.)
   (display (number->string (pop) radix))
@@ -471,27 +508,33 @@ are supported."
   (newline))
 
 
-;; emit ( c -- ) Prints the top of the stack as a character.
+;; emit ( c -- ) Prints the top of the stack as a
+;;               character. Traditionally that's an
+;;               octet, but we'll trust unicode to
+;;               handle things.
 (define (emit)
   (check-stack 1 'emit)
   (display (integer->char (pop))))
 
 
-;; ." ( -- ) Prints everything up to but not included a trailing
-;;           double quote.
+;; ." ( -- ) Prints everything up to but not included a
+;;           trailing double quote.
 ;;           TODO: not implemented yet.
 (define (dot-quote)
   (display "dot-quote not yet implemented."))
 
 
-;; key ( -- c) Accept single character input
+;; key ( -- c) Accept single character input and place
+;;             it on the stack. Might be outside the
+;;             traditional ANSI 1-255.
+;;             TODO: not implemented yet.
 (define (key)
   (display "key not yet implemented."))
 
 
-;;
-;; Stack manipulation words.
-;;
+;;;
+;;; Stack manipulation words.
+;;;
 
 
 ;; DUP	( n — n n )	Duplicates the top stack item
@@ -528,14 +571,14 @@ are supported."
   (push-r (pop)))
 
 
-;; r>   ( -- n1) [ n1 -- ]  Move an item from return to data
+;; r>   ( -- n) [ n -- ]  Move an item from return to data
 (define (from-r)
   (check-return 1 'r>)
   (push (pop-r)))
 
 
-;; r@   ( -- n1) [ n1 -- n1] Copy an item from return to data
-;; r    ( -- n1) [ n1 -- n1] Same as r@, an older name
+;; r@   ( -- n) [ n -- n] Copy an item from return to data
+;; r    ( -- n) [ n -- n] Same as r@, an older synonym
 (define (fetch-r)
   (check-return 1 'r@)
   (let ((n1 (pop-r)))
@@ -552,7 +595,23 @@ are supported."
     (push n1)))
 
 
-;; 2SWAP	( d1 d2 — d2 d1 )	Reverses the top two pairs of numbers
+;; ?DUP ( n1 -- n1 n1 ) but only if n1 is not zero
+(define (?dup)
+  (check-stack 1 '?dup)
+  (let* ((n1 (pop))
+         (r (not (zero? n1))))
+    (push n1)
+    (if r (push n1))))
+
+
+;;;
+;;; NOTE: The 2<blah> and double word math from older
+;;;       pre-64 bit days probably aren't needed so
+;;;       these might be deleted.
+;;;
+
+;; 2SWAP	( d1 d2 — d2 d1 )	Reverses the top two pairs
+;;                          of numbers
 (define (2swap)
   (check-stack 4 '2swap)
   (let ((d2b (pop)) (d2a (pop)) (d1b (pop)) (d1a (pop)))
@@ -568,7 +627,8 @@ are supported."
     (push da)(push db)))
 
 
-;; 2OVER	( d1 d2 — d1 d2 d1 )	Duplicates the second pair of numbers
+;; 2OVER	( d1 d2 — d1 d2 d1 ) Duplicates the second pair
+;;                             of numbers
 (define (2over)
   (check-stack 4 '2over)
   (let ((d2b (pop)) (d2a (pop)) (d1b (pop)) (d1a (pop)))
@@ -577,7 +637,7 @@ are supported."
     (push d1a)(push d1b)))
 
 
-;; 2DROP	( d1 d2 — d1 )	Discards the top pair of numbers
+;; 2DROP	( d1 d2 — d1 ) Discards the top pair of numbers
 (define (2drop)
   (check-stack 2 '2drop)
   (pop)(pop))
@@ -590,10 +650,11 @@ are supported."
 ;;
 
 
-;; primitive arithmetic. these can be redefined by the user.
+;;;
+;;; Basic arithmetic.
+;;;
 
-
-;; –	( n1 n2 — diff )	Subtracts (n1-n2)
+;; – ( n1 n2 — diff ) Subtracts n1-n2
 (define (op-)
   (check-stack 2 '-)
   (let* ((n2 (pop)) (n1 (pop))
@@ -601,7 +662,7 @@ are supported."
     (push r)))
 
 
-;; +	( n1 n2 — sum )	Adds
+;; + ( n1 n2 — sum ) Adds
 (define (op+)
   (check-stack 2 '+)
   (let* ((n2 (pop)) (n1 (pop))
@@ -609,7 +670,7 @@ are supported."
     (push r)))
 
 
-;; *	( n1 n2 — prod )	Multiplies
+;; * ( n1 n2 — prod ) Multiplies
 (define (op*)
   (check-stack 2 '*)
   (let* ((n2 (pop)) (n1 (pop))
@@ -617,7 +678,7 @@ are supported."
     (push r)))
 
 
-;; /	( n1 n2 — quot )	Divides (n1/n2)
+;; / ( n1 n2 — quot ) Divides n1/n2
 (define (op/)
   (check-stack 2 '/)
   (let* ((n2 (pop)) (n1 (pop))
@@ -625,7 +686,8 @@ are supported."
     (push r)))
 
 
-;; MOD	( n1 n2 — rem )	Divides; returns remainder only
+;; MOD ( n1 n2 — rem ) Divides n1/n2; returns only
+;;                     the remainder
 (define (mod)
   (check-stack 2 'mod)
   (let* ((n2 (pop)) (n1 (pop))
@@ -633,8 +695,8 @@ are supported."
     (push r)))
 
 
-;; /MOD	( n1 n2 — rem quot )	Divides; returns remainder
-;;                            and quotient
+;; /MOD ( n1 n2 — rem quot ) Divides; returns both
+;;                           remainder and quotient
 (define (/mod)
   (check-stack 2 '/mod)
   (let* ((n2 (pop)) (n1 (pop))
@@ -642,9 +704,12 @@ are supported."
     (push q) (push r)))
 
 
+;;;
+;;; Booleans
+;;;
 
-;; Casting booleans between Forth (-1, 0) and Scheme (#t, #f).
-;; Also make sure a Forth true value is -1.
+;; Casting booleans between Forth (-1, 0) and Scheme
+;; (#t, #f). Also ensure that a Forth true value is -1.
 
 (define (canonical-bool n)
   "Anything not zero in Forth is true and should be
@@ -659,12 +724,15 @@ converted to the proper true value of -1."
   "Convert a Forth -1 or 0 to #t or #f."
   (if (zero? n) #f #t))
 
+;;;
+;;; Logical and relational operators.
+;;;
 
-;; Logical and relational operators. As in C or Forth,
-;; 0 is false and anything else is true. Forth returns
-;; -1 from its relational checks.
 
-;; <    ( n1 n2 -- n2 < n1 )
+;; As in C or Forth, 0 is false and anything else is true.
+;; Forth returns -1 from its relational checks for truth.
+
+;; < ( n1 n2 -- n2 < n1 )
 (define (op<)
   (check-stack 2 '<)
   (let* ((n2 (pop)) (n1 (pop))
@@ -672,7 +740,7 @@ converted to the proper true value of -1."
     (push (forth-bool r))))
 
 
-;; =    ( n1 n2 -- n1 = n2 )
+;; = ( n1 n2 -- n1 = n2 )
 (define (op=)
   (check-stack 2 '=)
   (let* ((n2 (pop)) (n1 (pop))
@@ -688,7 +756,7 @@ converted to the proper true value of -1."
     (push (forth-bool r))))
 
 
-;; >    ( n1 n2 -- n2 > n1 )
+;; > ( n1 n2 -- n2 > n1 )
 (define (op>)
   (check-stack 2 '>)
   (let* ((n2 (pop)) (n1 (pop))
@@ -720,34 +788,31 @@ converted to the proper true value of -1."
     (push (forth-bool r))))
 
 
-;; ?DUP ( n1 -- n1 n1 ) but only if n1 is not zero
-(define (?dup)
-  (check-stack 1 '?dup)
-  (let* ((n1 (pop))
-         (r (not (zero? n1))))
-    (push n1)
-    (if r (push n1))))
-
-
-;; not   ( n1 -- !n1)
+;; not ( n1 -- !n1)
 (define (op-not)
   (check-stack 1 'not)
   (let* ((n1 (pop)))
     (push (forth-bool (zero? n1)))))
 
 
-;; and   ( n1 n2 -- n1&n2)
+;; and ( n1 n2 -- n1&n2)
 (define (op-and)
   (check-stack 2 'and)
-  (let* ((n2 (canonical-bool (pop))) (n1 (canonical-bool (pop))))
-    (push (forth-bool (and (scheme-bool n1) (scheme-bool n2))))))
+  (let*
+      ((n2 (canonical-bool (pop)))
+       (n1 (canonical-bool (pop))))
+    (push (forth-bool
+           (and (scheme-bool n1) (scheme-bool n2))))))
 
 
-;; or    ( n1 n2 -- n1|n2)
+;; or ( n1 n2 -- n1|n2)
 (define (op-or)
   (check-stack 2 'or)
-  (let* ((n2 (canonical-bool (pop))) (n1 (canonical-bool (pop))))
-    (push (forth-bool (or (scheme-bool n1) (scheme-bool n2))))))
+  (let*
+      ((n2 (canonical-bool (pop)))
+       (n1 (canonical-bool (pop))))
+    (push (forth-bool
+           (or (scheme-bool n1) (scheme-bool n2))))))
 
 
 ;;;
@@ -756,11 +821,12 @@ converted to the proper true value of -1."
 
 
 ;;
-;; Returns the dictionary entry for word or 'word-not-found.
+;; Returns the dictionary entry for word or
+;; 'word-not-found.
 ;;
 (define (lookup word)
-  "Return the definition to execute WORD from the dictionary, or
-'word-not-found."
+  "Return the definition to execute WORD from the
+dictionary, or 'word-not-found."
   (letrec* ((f (lambda (w d)
                  (cond ((null? d) 'word-not-found)
                        ((string-ci= w (entry-name (car d))) (car d))
@@ -769,17 +835,18 @@ converted to the proper true value of -1."
 
 
 ;;
-;; A pending definition is a list of word tokens and possibly some
-;; numeric literals. The first element of the list is the new word,
-;; and subsequent elements comprise the definition.
+;; A pending definition is a list of word tokens and
+;; possibly some numeric literals. The first element of
+;; the list is the new word, and subsequent elements
+;; comprise the definition.
 ;;
-;; Iterate through the definition and for every element that exists
-;; in the current dictionary, copy its definition and add it to the
-;; new word being defined.
+;; Iterate through the definition and for every element
+;; that exists in the current dictionary, copy its
+;; definition and add it to the new word being defined.
 ;;
 (define (add-new-word pending-def)
-  "Add the new word and it's definition from PENDING-DEF to the
-dictionary."
+  "Add the new word and it's definition from PENDING-DEF
+to the dictionary."
   (if (member (string-downcase (car pending-def)) perm-words)
       (error 'add-new-word "some core words can not be redefined" pending-def))
   (let ((new-word (car pending-def))
@@ -798,8 +865,9 @@ dictionary."
     (set! dictionary (cons (entry-build new-word 'user-word (reverse tokenized)) dictionary))))
 
 
-;; These are words that can not be redefined. Their operation is
-;; too fundamental to the assumptions in notatil.
+;; These are words that can not be redefined. Their
+;; operation is too fundamental to the assumptions in
+;; notatil.
 (define perm-words
   '(
     ;; all your base are belong to us
@@ -808,9 +876,6 @@ dictionary."
     "decimal" "dec"
     "octal" "oct"
     "binary" "bin"
-
-    ;; these aren't really words, but i can't let you redefine them
-    "-1" "0" "1"
 
     ;; running the repl
     "bye" "help" "load" "save" "see" "block" "list" "edit"
@@ -828,6 +893,7 @@ dictionary."
     "(" ")"
 
     ))
+
 ;;;
 ;;; Table of handy approximations from Forth book, fixed point ways to use
 ;;; floating point constants.

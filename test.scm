@@ -17,7 +17,7 @@
 ;; error handling.
 ;;
 (load "notatil.scm")
-(define nat notatil-test-clear-dictionary)
+(define nat nat-test-clear-dictionary)
 
 ;; quick test is it up and somewhat functional
 (check (nat "1 2 3") => '(3 2 1)) ;; stack works
@@ -92,6 +92,8 @@
 (check (nat ": foo 5 ; ") => '())          ;; define
 (check (nat ": foo 5 ; foo ") => '(5))     ;; define and execute
 (check (nat ": foo 5 ; : bar foo ; : foo 6 ; bar foo ") => '(6 5)) ;; redefine showing lexical scope
+;; TODO: how to test for poorly setup defs? : foo 5; keeps
+;; compiling after end.
 
 
 (check-report)
