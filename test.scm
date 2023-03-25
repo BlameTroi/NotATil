@@ -88,6 +88,10 @@
 (check (nat "0 ?dup") => '(0))
 (check (nat "1 ?dup") => '(1 1))
 
+;; test some simple definitions
+(check (nat ": foo 5 ; ") => '())          ;; define
+(check (nat ": foo 5 ; foo ") => '(5))     ;; define and execute
+(check (nat ": foo 5 ; : bar foo ; : foo 6 ; bar foo ") => '(6 5)) ;; redefine showing lexical scope
 
 
 (check-report)

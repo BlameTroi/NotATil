@@ -55,13 +55,15 @@
   (let ((cmdline "")
         (status "enter help for basic help."))
     (notatil-completion-status status)
-    (notatil-prompt cmdline)
-    (while (not (string-ci= cmdline "bye"))
+    (set! cmdline (notatil-prompt))
+    (while (not byebye)
+      (notatil-tokenize cmdline) ;; needs more
       ;; to be provided
       (set! status " ok ")
       (notatil-completion-status status)
-      (notatil-prompt cmdline))
-    ))
+      (if (not byebye)
+          (set! cmdline (notatil-prompt)))))
+  (newline))
 
 
 ;;
@@ -86,19 +88,18 @@ the dictionary if it is empty. Returns the stack."
 ;;; User interaction helpers
 ;;;
 
-(define (notatil-prompt cmdline)
+(define (notatil-prompt)
   "Display prompt to the user and accept commands."
-  (set! cmdline (readline "> ")))
+  (readline "> "))
 
 
 (define (notatil-completion-status status)
   "Display the status of the last commands and report
 the length of the stack to the user."
   (display status)
-  (if (> length stack-data 0)
+  (if (> (length stack-data) 0)
       (display (length stack-data)))
   (newline))
-
 
 ;;;
 ;;; Parse, evaluate, compile to dictionary, and
@@ -117,10 +118,10 @@ the length of the stack to the user."
 ;; return empty string tokens if multiple delimiters are read
 ;; in succession but the evaluator ignores them.
 ;;
+
 (define (notatil-tokenize prog)
   (map notatil-eval
        (string-split prog (char-set #\space #\tab #\nl))))
-
 
 ;;
 ;; Evaluate a token (or word) from the command line. For simple
@@ -827,6 +828,25 @@ dictionary."
     "(" ")"
 
     ))
+;;;
+;;; Table of handy approximations from Forth book, fixed point ways to use
+;;; floating point constants.
+;;;
+
+;; so a forth word for these would look like ...
+;; : *pi ( n1 -- n1*pi ) 355 * 113 / ;
+;;   Number          Approximation            Error
+;; π = 3.141 …       355 / 113                8.5 x 10-8
+;; π = 3.141 …       1068966896 / 340262731   3.0 x 10-18
+;; √2 = 1.414 …      19601 / 13860            1.5 x 10-9
+;; √3 = 1.732 …      18817 / 10864            1.1 x 10-9
+;; e = 2.718 …       28667 / 10546            5.5 x 10-9
+;; √10 = 3.162 …     22936 / 7253             5.7 x 10-9
+;; 12√2 = 1.059 …    26797 / 25293            1.0 x 10-9
+;; log(2) / 1.6384 = 0.183 …      2040 / 11103  1.1 x 10-8
+;; ln(2) / 16.384 = 0.042 …       485 / 11464   1.0 x 10-7
+
+;; the 10-blah are "10 raised to -blah" so 8.5e-8 is the error on first pi
 
 
 ;; These are the starting words of the notatil system.
@@ -1043,26 +1063,19 @@ dictionary."
 ;; Multiplies, then divides (n1*n2/n3). Returns the remainder (n4) and the quotient (n5). Uses a double-length intermediate result.
 
 
-;;;
-;;; Table of handy approximations from Forth book, fixed point ways to use
-;;; floating point constants.
-;;;
-
-;; so a forth word for these would look like ...
-;; : *pi ( n1 -- n1*pi ) 355 * 113 / ;
-;;   Number          Approximation            Error
-;; π = 3.141 …       355 / 113                8.5 x 10-8
-;; π = 3.141 …       1068966896 / 340262731   3.0 x 10-18
-;; √2 = 1.414 …      19601 / 13860            1.5 x 10-9
-;; √3 = 1.732 …      18817 / 10864            1.1 x 10-9
-;; e = 2.718 …       28667 / 10546            5.5 x 10-9
-;; √10 = 3.162 …     22936 / 7253             5.7 x 10-9
-;; 12√2 = 1.059 …    26797 / 25293            1.0 x 10-9
-;; log(2) / 1.6384 = 0.183 …      2040 / 11103  1.1 x 10-8
-;; ln(2) / 16.384 = 0.042 …       485 / 11464   1.0 x 10-7
-
-;; the 10-blah are "10 raised to -blah" so 8.5e-8 is the error on first pi
-
+;; VARIABLE xxx( — ) Creates a variable named xxx; the word xxx returns its address when executed.
+;; xxx: ( — addr )   *not suppporting* another form of VARIABLE xxxx
+;; !( n addr — ) Stores a single-length number into the address.
+;; @( addr — n ) Fetches that value at addr.
+;; ?( addr — ) Prints the contents of the address, followed by one space.
+;; +!( n addr — ) Adds a single-length number to the contents of the address.
+;; CONSTANT xxx( n — ) Creates a variable named xxx with the value n; the word xxx returns n when executed.
+;; xxx: ( — n ) *not supporting* another form of CONSTANT xxxx
+;; 2VARIABLE 2CONSTANT 2! 2@ *not supporting*
+;; FILL( addr n char — ) Fills n bytes of memory, beginning the address addr, with value char.
+;; ERASE( addr n — ) Stores zeroes into n bytes of memory, beginning at address addr.
+;; C!( char addr — ) Stores byte char at address addr.
+;; C@( char addr — ) Fetches byte value from the address.
 
 
 ;;;
