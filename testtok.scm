@@ -90,24 +90,35 @@ NotaTil."
   (set! nat-buffer-empty #f)
   ;; call net-tokenizer until such time as nat-buffer
   ;; is empty
-  (let* ((i 0)
-         (tok-pair '())
-         (tok-type 'nat-tok-none)
-         (tok-string ""))
+  (let* ((tok-pair '()) (tok-extra-pair '())
+         (tok-type 'nat-tok-none) (tok-string "")
+         (dict-entry 'nat-word-not-found))
     (set! tok-pair (nat-next-token))
     (while (not nat-buffer-empty)
       (set! tok-type (car tok-pair))
       (set! tok-string (cdr tok-pair))
-      ;; could do more here but for now ...
+      (cond
+       ((equal? tok-type 'nat-tok-word)
+        (set! dict-entry (lookup tok-string))
+        (if (equal? dict-entry 'nat-word-not-found)
+            (let ((n (token-is-integer-literal tok-string radix))
+                  (f (token-is-real-literal tok-string radix)))
+              (cond (n (set! tok-type 'nat-tok-integer))
+                    (f (set! tok-type 'nat-tok-real))
+                    (else (set! tok-type 'nat-tok-word-unknown)))
+              (set! tok-pair (cons tok-type tok-string))))
+        )
+       ((equal? tok-type 'nat-tok-begin-comment)
+        (set! tok-extra-pair (cons 'nat-tok-comment (nat-buffer-to-char #\))))
+        )
+       ) ;; add processed token to result
       (set! nat-tokenized (cons tok-pair nat-tokenized))
+      (if (not (null? tok-extra-pair))
+          (set! nat-tokenized (cons tok-extra-pair nat-tokenized)))
       (set! tok-pair (nat-next-token))
-      )
-    ;; post processing should scan for numbers and
-    ;; mark them here. check everything for existence
-    ;; in dictionary, if not, it must either be a
-    ;; literal, new definition, or ?
-    (reverse nat-tokenized)))
-
+      (set! tok-extra-pair '())))
+  ;; put in proper order for caller
+  (reverse nat-tokenized))
 
 (define (nat-next-token)
   "Get the next token out of nat-buffer and return it as
@@ -117,41 +128,26 @@ but does not consume past the token.
 Anything not recognized is assumed to be a word and will
 be addressed later in notatil."
   (nat-trimleft-buffer)
-  (cond ((string= "" nat-buffer)
+  (cond (nat-buffer-empty
+         (set! nat-buffer "")
+         (cons 'nat-tok-none ""))
+        ((string= "" nat-buffer)
          (set! nat-buffer-empty #t)
          (cons 'nat-tok-none ""))
-        ((nat-buffer-begins-definition?)
-         (cons 'nat-tok-definition (nat-buffer-to-blank)))
-        ((nat-buffer-begins-string?)
-         (cons 'nat-tok-string (nat-buffer-to-blank)))
-        ((nat-buffer-begins-do?)
-         (cons 'nat-tok-do (nat-buffer-to-blank)))
-        ((nat-buffer-begins-loop?)
-         (cons 'nat-tok-loop (nat-buffer-to-blank)))
-        ((nat-buffer-begins-if?)
-         (cons 'nat-tok-if (nat-buffer-to-blank)))
-        ((nat-buffer-begins-then?)
-         (cons 'nat-tok-then (nat-buffer-to-blank)))
-        ((nat-buffer-begins-else?)
-         (cons 'nat-tok-else (nat-buffer-to-blank)))
-        ((nat-buffer-begins-comment?)
-         (cons 'nat-tok-comment (nat-buffer-to-blank)))
-        ((nat-buffer-begins-variable?)
-         (cons 'nat-tok-variable (nat-buffer-to-blank)))
-        ((nat-buffer-begins-constant?)
-         (cons 'nat-tok-constant (nat-buffer-to-blank)))
-        ((nat-buffer-begins-marker?)
-         (cons 'nat-tok-marker (nat-buffer-to-blank)))
-        ((nat-buffer-begins-bye?)
-         (cons 'nat-tok-bye (nat-buffer-to-blank)))
-        ((nat-buffer-begins-help?)
-         (cons 'nat-tok-help (nat-buffer-to-blank)))
-        ((nat-buffer-begins-see?)
-         (cons 'nat-tok-see (nat-buffer-to-blank)))
-        ((nat-buffer-begins-list?)
-         (cons 'nat-tok-list (nat-buffer-to-blank)))
         (else
-         (cons 'nat-tok-word (nat-buffer-to-blank)))))
+         (cons (nat-buffer-token-code) (nat-buffer-to-blank)))))
+
+
+(define (nat-buffer-token-code)
+  "Does the first token in the buffer exist in the code
+mapping table? If so, return the code or unknown."
+  (letrec*
+      ((f (lambda (xs)
+            (cond ((null? xs) 'nat-tok-word)
+                  ((nat-buffer-prefix? (car (car xs))) (cdr (car xs)))
+                  (else (f (cdr xs))))
+            )))
+    (f nat-token-code-map)))
 
 ;;;
 ;;; Buffer parse and carve
@@ -182,8 +178,13 @@ The terminating blank is consumed but not returned."
 (define (nat-buffer-to-char c)
   "Return the contents of the buffer up to but not
 including character C. This would be useful when
-finding end of string, etc."
-  )
+finding end of string, etc. The terminating character
+is not returned or consumed."
+  (let ((i (string-index nat-buffer c)) (t ""))
+    (cond (i (set! t (substring nat-buffer 0 i))
+             (set! nat-buffer (substring nat-buffer i)))
+          (else (set! t (string-join (list  "ERROR COULD NOT FIND EXPECTED '" (list->string (list c)) "'") ""))))
+    t))
 
 (define (nat-buffer-through-char c)
   "Return the contents of the buffer up to and
@@ -204,60 +205,45 @@ including the string token TK."
   "DRY buffer checks."
   (= (string-length s) (string-prefix-length-ci nat-buffer s)))
 
-(define (nat-buffer-begins-string?)
-  "Is this the start of a string definition, either a print
-or literal?"
-  (or (nat-buffer-prefix? ".\" ")
-      (nat-buffer-prefix? "s\" ")
-      (nat-buffer-prefix? "\" ")))
-
 ;;
-;; These are pretty routine syntax wise. We could have some
-;; sort of table controlling this, but since I don't know
-;; what all I need in that table beyond the list of special
-;; tokens, we'll do things this way for now.
+;; Token and type mapping table
 ;;
-(define (nat-buffer-begins-do?)
-  (nat-buffer-prefix? "do "))
+;; Not every possible word is included. Control structure
+;; and definition words are, plus some repl operations.
+;;
+(define nat-token-code-map
+  (list (cons "do " 'nat-tok-do)
+        (cons "loop " 'nat-tok-loop)
+        (cons "if " 'nat-tok-if)
+        (cons "then " 'nat-tok-then)
+        (cons "else " 'nat-tok-else)
+        (cons ": " 'nat-tok-definition)
+        (cons "; " 'nat-tok-end-definition)
+        (cons "variable " 'nat-tok-variable)
+        (cons "constant " 'nat-tok-constant)
+        (cons "marker " 'nat-tok-marker)
+        (cons "see " 'nat-tok-see)
+        (cons "list " 'nat-tok-list)
+        (cons "bye " 'nat-tok-bye)
+        (cons "help " 'nat-tok-help)
+        (cons "( " 'nat-tok-begin-comment)
+        (cons ") " 'nat-tok-end-comment)
+        ;; strings can be dormant or printing
+        ;; they are closed by the first quote
+        ;; after the open, not space quote, so
+        ;; that space would be in the string.
+        ;; 'nat-tok-string-end can't be in
+        ;; this table because some forths
+        ;; allow a single quote to start a
+        ;; string.
+        (cons ".\" " 'nat-tok-print-string)
+        (cons "s\" " 'nat-tok-string-begin)
+        (cons "\" " 'nat-tok-string-begin)
+        ;;
+        ;;
+        ;;
+        ))
 
-(define (nat-buffer-begins-loop?)
-  (nat-buffer-prefix? "loop "))
-
-(define (nat-buffer-begins-if?)
-  (nat-buffer-prefix? "if "))
-
-(define (nat-buffer-begins-then?)
-  (nat-buffer-prefix? "then "))
-
-(define (nat-buffer-begins-else?)
-  (nat-buffer-prefix? "else "))
-
-(define (nat-buffer-begins-definition?)
-  (nat-buffer-prefix? ": "))
-
-(define (nat-buffer-begins-variable?)
-  (nat-buffer-prefix? "variable "))
-
-(define (nat-buffer-begins-constant?)
-  (nat-buffer-prefix? "constant "))
-
-(define (nat-buffer-begins-marker?)
-  (nat-buffer-prefix? "marker "))
-
-(define (nat-buffer-begins-see?)
-  (nat-buffer-prefix? "see "))
-
-(define (nat-buffer-begins-list?)
-  (nat-buffer-prefix? "list "))
-
-(define (nat-buffer-begins-bye?)
-  (nat-buffer-prefix? "bye "))
-
-(define (nat-buffer-begins-help?)
-  (nat-buffer-prefix? "help "))
-
-(define (nat-buffer-begins-comment?)
-  (nat-buffer-prefix? "( "))
 
 ;;;
 ;;; Parse and tokenize testing.
@@ -270,15 +256,16 @@ or literal?"
 ;; Recognition of single tokens in isolation
 ;;
 (check (tok-tester " ") => (list ))
-(check (tok-tester "blah") => (list (cons 'nat-tok-word "blah")))
+(check (tok-tester "blah") => (list (cons 'nat-tok-word-unknown "blah")))
 ;; does not change case
-(check (tok-tester "DelTA") => (list (cons 'nat-tok-word "DelTA")))
+(check (tok-tester "DelTA") => (list (cons 'nat-tok-word-unknown "DelTA")))
 (check (tok-tester "if") => (list (cons 'nat-tok-if "if")))
 (check (tok-tester "ELSE") => (list (cons 'nat-tok-else "ELSE")))
 (check (tok-tester "then") => (list (cons 'nat-tok-then "then")))
 (check (tok-tester "do") => (list (cons 'nat-tok-do "do")))
 (check (tok-tester "loop") => (list (cons 'nat-tok-loop "loop")))
-(check (tok-tester "(") => (list (cons 'nat-tok-comment "(")))
+(check (tok-tester "(") => (list (cons 'nat-tok-begin-comment "(")
+                                 (cons 'nat-tok-comment "ERROR COULD NOT FIND EXPECTED ')'")))
 (check (tok-tester "constant") => (list (cons 'nat-tok-constant "constant")))
 (check (tok-tester "variable") => (list (cons 'nat-tok-variable "variable")))
 (check (tok-tester "marker") => (list (cons 'nat-tok-marker "marker")))
@@ -289,32 +276,44 @@ or literal?"
 ;;
 ;; numeric literal recognition
 ;;
+(check (tok-tester "-2") => (list (cons 'nat-tok-integer "-2")))
+(check (tok-tester "-1") => (list (cons 'nat-tok-integer "-1")))
+(check (tok-tester "0") => (list (cons 'nat-tok-integer "0")))
 (check (tok-tester "1") => (list (cons 'nat-tok-integer "1")))
+(check (tok-tester "2") => (list (cons 'nat-tok-integer "2")))
 (check (tok-tester "1.25") => (list (cons 'nat-tok-real "1.25")))
 (check (tok-tester "1.0E-8") => (list (cons 'nat-tok-real "1.0E-8")))
 ;; This could be a hex value depending on radix but for now testing
 ;; with radix 10
-(check (tok-tester "1EEF") => (list (cons 'nat-tok-word "1EEF")))
+(check (tok-tester "1EEF") => (list (cons 'nat-tok-word-unknown "1EEF")))
 
 ;;
 ;; simple multi token expressions
 ;;
 (check (tok-tester ": foo 5 ; ") => (list (cons 'nat-tok-definition ":")
-                                          (cons 'nat-tok-word "foo")
-                                          (cons 'nat-tok-word "5")
-                                          (cons 'nat-tok-word ";")))
+                                          (cons 'nat-tok-word-unknown "foo")
+                                          (cons 'nat-tok-integer "5")
+                                          (cons 'nat-tok-end-definition ";")))
 
-(check (tok-tester "10 0 do foo loop .s") => (list (cons 'nat-tok-word "10")
-                                                   (cons 'nat-tok-word "0")
-                                                   (cons 'nat-tok-do "do")
-                                                   (cons 'nat-tok-word "foo")
-                                                   (cons 'nat-tok-loop "loop")
+(check (tok-tester "10 0 DO foo LOOP .s") => (list (cons 'nat-tok-integer "10")
+                                                   (cons 'nat-tok-integer "0")
+                                                   (cons 'nat-tok-do "DO")
+                                                   (cons 'nat-tok-word-unknown "foo")
+                                                   (cons 'nat-tok-loop "LOOP")
                                                    (cons 'nat-tok-word ".s")))
 
-(check (tok-tester ".\" this is a test\" cr") => (list (cons 'nat-tok-begin-string ".\"")
+(check (tok-tester ".\" this is a test\" cr") => (list (cons 'nat-tok-begin-print-string ".\"")
                                                        (cons 'nat-tok-string "this is a test")
                                                        (cons 'nat-tok-end-string "\"")
                                                        (cons 'nat-tok-word "cr")))
+
+(check (tok-tester ": plus ( n1 n2 -- sum ) + ; ") => (list (cons 'nat-tok-definition ":")
+                                                            (cons 'nat-tok-word-unknown "plus")
+                                                            (cons 'nat-tok-begin-comment "(")
+                                                            (cons 'nat-tok-comment "n1 n2 -- sum ")
+                                                            (cons 'nat-tok-end-comment ")")
+                                                            (cons 'nat-tok-word "+")
+                                                            (cons 'nat-tok-end-definition ";")))
 
 
 ;;;

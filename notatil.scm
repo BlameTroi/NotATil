@@ -189,7 +189,7 @@ the length of the stack to the user."
 
      ((string= ";" word)
       (set! pending-def (reverse pending-def))
-      (if (token-is-numeric-literal (car pending-def) radix)
+      (if (token-is-integer-literal (car pending-def) radix)
           (error 'feval "can not redefine a numeric literal via :;"
                  (car pending-def) radix (cdr pending-def)))
       (add-new-word pending-def)
@@ -209,12 +209,12 @@ the length of the stack to the user."
      ;; use a definition of depth less than the depth
      ;; of the current word. older words use older
      ;; definitions.
-     ((not (equal? 'word-not-found definition))
+     ((not (equal? 'nat-word-not-found definition))
       (nat-execute word (entry-proc definition)))
 
      ;; number in supported radix?
-     ((not (equal? #f (token-is-numeric-literal word radix)))
-      (push (token-is-numeric-literal word radix)))
+     ((not (equal? #f (token-is-integer-literal word radix)))
+      (push (token-is-integer-literal word radix)))
 
      ;; I'm sorry Dave, I can't do that
 
@@ -290,7 +290,8 @@ the length of the stack to the user."
 ;;; Parse helpers.
 ;;;
 
-(define (token-is-numeric-literal w b)
+
+(define (token-is-integer-literal w b)
   "If string W is a numeric literal in base B, return the
 numeric value or #f. Only hex, decimal, octal, and binary
 are supported."
@@ -312,6 +313,18 @@ are supported."
      (else (f w)))))
 
 
+(define (token-is-real-literal w b)
+  "If string W is a real (floating point) numeric literal in
+base 10, return the numeric value or #f. Reals are only
+valid in decimal, so base B <> 10 is automatically false.
+
+I could probably blindly take the result of string->number
+but will do some checks first."
+  (if (and (= b 10)(string-every chars-real w))
+      (string->number w)
+      #f))
+
+
 ;; character sets for testing strings to see if the are
 ;; valid digit sequences the current base.
 
@@ -329,6 +342,9 @@ are supported."
 (define chars-bin
   (char-set #\0 #\1))
 
+(define chars-real
+  (char-set #\0 #\1 #\2 #\3 #\4 #\5 #\6 #\7 #\8 #\9
+            #\e #\E #\. #\+ #\-))
 
 ;;;
 ;;; Radix suppport.
@@ -606,8 +622,9 @@ are supported."
 
 ;;;
 ;;; NOTE: The 2<blah> and double word math from older
-;;;       pre-64 bit days probably aren't needed so
-;;;       these might be deleted.
+;;;       pre-64 bit days probably aren't needed, but
+;;;       they stack manipulations help with address
+;;;       length pairs, as with strings.
 ;;;
 
 ;; 2SWAP	( d1 d2 — d2 d1 )	Reverses the top two pairs
@@ -670,7 +687,7 @@ are supported."
     (push r)))
 
 
-;; * ( n1 n2 — prod ) Multiplies
+;;  * ( n1 n2 — prod ) Multiplies
 (define (op*)
   (check-stack 2 '*)
   (let* ((n2 (pop)) (n1 (pop))
@@ -822,13 +839,13 @@ converted to the proper true value of -1."
 
 ;;
 ;; Returns the dictionary entry for word or
-;; 'word-not-found.
+;; 'nat-word-not-found.
 ;;
 (define (lookup word)
   "Return the definition to execute WORD from the
-dictionary, or 'word-not-found."
+dictionary, or 'nat-word-not-found."
   (letrec* ((f (lambda (w d)
-                 (cond ((null? d) 'word-not-found)
+                 (cond ((null? d) 'nat-word-not-found)
                        ((string-ci= w (entry-name (car d))) (car d))
                        (else (f w (cdr d)))))))
     (f word dictionary)))
@@ -855,8 +872,8 @@ to the dictionary."
     (while (not (null? def))
       (set! curr (car def))
       (set! curr-def (lookup curr))
-      (if (equal? curr-def 'word-not-found)
-          (set! proc (token-is-numeric-literal curr radix))
+      (if (equal? curr-def 'nat-word-not-found)
+          (set! proc (token-is-integer-literal curr radix))
           (set! proc (entry-proc curr-def)))
       (if (or (procedure? proc) (integer? proc) (list? proc))
           (set! tokenized (cons proc tokenized))
