@@ -51,25 +51,55 @@
 ;; cells
 ;; allot
 
+
+;; these gymnastics are needed because I haven't figured
+;; out how to enter (char-set #\" #\( #\) ) with lispy.
+;; I'd rather not switch it off and on.
+(define dlm-lsc (string->list "\"()"))
+(define dlm-quote (car dlm-lsc))
+(define dlm-lparen (cadr dlm-lsc))
+(define dlm-rparen (caddr dlm-lsc))
+(define dlm-openers (char-set dlm-quote dlm-lparen))
+(define dlm-closers (char-set dlm-quote dlm-rparen))
+
+
+;; original simple scrub
 (define (nat-scrub s)
   "Normalize string S for tokenization. Change all white-
 space to blanks, reduce runs of blanks to a single blank
-unless they are in a Forth string, and add blanks to both
-ends of the incoming string to simplify boundary handling."
+unless they are in a Forth string or comment, and add
+blanks to both ends of the incoming string to simplify
+boundary handling."
   (let ((accum '(#\space))
-        (lastc #\space)
-        (currc #\space)
-        (instr #f)
+        (lastc #\space) (currc #\space)
+        (inside #f) (seeking #\nul)
         (t (string->list s)))
     (while (not (null? t))
-      (set! currc (car t))
-      (set! t (cdr t))
+      ;; consume next char
+      (set! lastc currc) (set! currc (car t)) (set! t (cdr t))
+      ;; if inside pass straight thru but watch for end
+      (if inside
+          (begin      ; just pass inside through
+            (set! accum (cons currc accum))
+            (if (char=? seeking currc)
+                (begin                  ; transition to outside
+                  (set! seeking #\nul)
+                  (set! inside #f)))
+            (continue)))
+      ;;
+      (if (or (char=? currc dlm-lparen) (char=? currc dlm-quote))
+          (begin                ; entered a string or comment
+            (set! accum (cons currc accum))
+            (set! inside #t)
+            (set! seeking (if (char=? currc dlm-lparen) dlm-rparen dlm-quote))
+            (continue)))
+      ;;
       (if (or (char=? currc #\nl) (char=? currc #\tab))
           (set! currc #\space))
+      ;;
       (if (or (not (char=? currc #\space)) (not (char=? lastc currc)))
-          (begin
-            (set! accum (cons currc accum))))
-      (set! lastc currc))
+          (set! accum (cons currc accum))))
+    ;; end of while, watch for needing one more space
     (if (not (char=? (car accum) #\space))
         (set! accum (cons #\space accum)))
     (list->string (reverse accum))))
@@ -197,17 +227,17 @@ is not returned or consumed."
 (define (nat-buffer-through-char c)
   "Return the contents of the buffer up to and
 including character C."
-  )
+  (error "not implemented"))
 
 (define (nat-buffer-to-token tk)
   "Return the contents of the buffer up to but not
 including the string token TK."
-  )
+  (error "not implemented"))
 
 (define (nat-buffer-through-token tk)
   "Return the contents of the buffer up to and
 including the string token TK."
-  )
+  (error "not implemented"))
 
 (define (nat-buffer-prefix? s)
   "DRY buffer checks."
@@ -329,6 +359,11 @@ including the string token TK."
 (check (tok-tester "1EEF") =>
        (list (cons 'nat-tok-word-unknown "1EEF")))
 
+;; display number format should be seen as an unknown word
+;; but is not an automatic error.
+(check (tok-tester "10,357.62") =>
+       (list (cons 'nat-tok-word-unknown "10,357.62")))
+
 ;;
 ;; simple multi token expressions
 ;;
@@ -383,19 +418,27 @@ including the string token TK."
 ;;; Scrubbing of inbound strings
 ;;;
 
-;; scrub line that needs no scrub
-(check (nat-scrub "1 2 +") => " 1 2 + ")
-
-;; deblank and denewline
+;; test embeded newline
 (check (nat-scrub "     17 3 4     x  zz
   w") => " 17 3 4 x zz w ")
 
-;; check all three special characters
+;; test that tabs, spaces, and newlines handled properly
 (check (nat-scrub
         (list->string
          '(#\tab #\1 #\space #\tab #\tab #\2 #\nl #\tab #\+ #\nl)))
        => " 1 2 + ")
 
+;; tests embeded comment
+(check   (nat-scrub "Test  ( comment   handling)    in  scrub.") =>
+         " Test ( comment   handling) in scrub. ")
+
+;; test from comment testing
+(check (nat-scrub "Test with           nothing inside  bracketing   characters ") =>
+       " Test with nothing inside bracketing characters ")
+
+;; test embeded string
+(check (nat-scrub "Test    with stuff outside s\" quotes   and also inside\"  quotes") =>
+       " Test with stuff outside s\" quotes   and also inside\" quotes ")
 
 ;;;
 ;;; final report
