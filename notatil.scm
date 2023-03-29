@@ -76,8 +76,9 @@
   (nat-display-status)
   (nat-prompt-read)
   (while (not nat-terminating)
-    (nat-tokenize nat-buffer) ;; needs more
-    ;; to be provided
+    (nat-tokenize)
+    (nat-evaluate)
+    ;; process
     (set! nat-status " ok ")
     (nat-display-status)
     (if (not nat-terminating)
@@ -94,13 +95,13 @@
   "Evaluate a command line for testing. Only initializes
 the dictionary if it is empty. Returns the stack."
   (nat-test-reset)
-  (nat-tokenize prog)
+  (nat-tokenize-old prog)
   stack-data)
 
 (define (nat-test-clear-dictionary prog)
   "Test entry for unit test scripting, does a full reset."
   (nat-full-reset)
-  (nat-tokenize prog)
+  (nat-tokenize-old prog)
   stack-data)
 
 ;;;
@@ -154,12 +155,94 @@ the length of the stack to the user."
 ;; are read in succession but the evaluator ignores them.
 ;;
 
-(define (nat-tokenize prog)
+(define (nat-tokenize-old prog)
   (map
    nat-eval
    (filter
     (lambda (t) (string<> "" t))
     (string-split prog (char-set #\space #\tab #\nl)))))
+
+(define (nat-tokenize)
+  "Take string S and convert it into a tokenized notatil
+program. The tokens are (type . word) pairs and are
+returned in a simple list."
+
+  ;; reset tokenizer state
+  (set! nat-buffer (nat-scrub nat-buffer))
+  (set! nat-tokenized '())
+  (set! nat-compiling #f)
+  (set! nat-buffer-empty #f)
+  ;; Keep grabbing tokens until the buffer is empty. The
+  ;; possibility of the input not being complete is an
+  ;; issue for callers. Don't try to tokenize a logically
+  ;; incomplete chunk of code.
+  (let* ((tok-pair '()) (tok-extra-pair '()) (tok-closing-pair '())
+         (tok-type 'nat-tok-none) (tok-string "")
+         (dict-entry 'nat-word-not-found))
+    (set! tok-pair (nat-next-token))
+    (while (not nat-buffer-empty)
+      (set! tok-type (car tok-pair))
+      (set! tok-string (cdr tok-pair))
+      (cond
+       ((equal? tok-type 'nat-tok-word)
+        (set! dict-entry (lookup tok-string))
+        (if (equal? dict-entry 'nat-word-not-found)
+            (let ((n (token-is-integer-literal tok-string radix))
+                  (f (token-is-real-literal tok-string radix)))
+              (cond (n (set! tok-type 'nat-tok-integer))
+                    (f (set! tok-type 'nat-tok-real))
+                    (else (set! tok-type 'nat-tok-word-unknown)))
+              (set! tok-pair (cons tok-type tok-string)))))
+       ((equal? tok-type 'nat-tok-begin-comment)
+        (set! tok-extra-pair (cons 'nat-tok-comment (nat-buffer-to-char #\))))
+        (set! tok-closing-pair (nat-next-token)))
+       ((or (equal? tok-type 'nat-tok-print-string) (equal? tok-type 'nat-tok-begin-string))
+        (set! tok-extra-pair (cons 'nat-tok-string (nat-buffer-to-char #\")))
+        (set! tok-closing-pair (nat-next-token))
+        (if (equal? (car tok-closing-pair) 'nat-tok-begin-string)
+            (set! tok-closing-pair (cons 'nat-tok-end-string (cdr tok-closing-pair)))))
+       ) ;; add processed token to result
+      (set! nat-tokenized (cons tok-pair nat-tokenized))
+      (if (not (null? tok-extra-pair))
+          (set! nat-tokenized (cons tok-extra-pair nat-tokenized)))
+      (if (and (not (null? tok-closing-pair))
+               (not (equal? (car tok-closing-pair) 'nat-tok-none)))
+          (set! nat-tokenized (cons tok-closing-pair nat-tokenized)))
+      (set! tok-pair (nat-next-token))
+      (set! tok-extra-pair '())
+      (set! tok-closing-pair '())))
+  ;; This will work better elsewhere as a vector for
+  ;; easier backtracking.
+  (set! nat-tokenized (list->vector (reverse nat-tokenized))))
+
+;;
+;; Evaluate (interpret, add to dictionary if needed) the
+;; tokenized buffer.
+(define (nat-evaluate)
+  "Need better documentation! A vector of tokens is in
+nat-tokenized. Process the tokens in sequence, this
+can be a mix of live words and data to execute and
+definitions to compile and place in the nat-dictionary."
+  ;; vector-ref vector-set! vector-length
+  ;; remember that you can't reference var1 in
+  ;; var2 and expect it's value to be updated,
+  ;; the vars are updated from base to exp in
+  ;; parallel
+  ;; (do ((var1 base1 exp1) (var2 base2 exp2) ...)
+  ;;   ((test? ...) final-exp)
+  ;;  side-effecting-statements ...)
+  (let* ((err #f)
+         (len (vector-length nat-tokenized)))
+    ;;
+    (do ((i 0 (+ i 1)))
+        ((or err (>= i len)))
+      (display (vector-ref nat-tokenized i)) (newline)
+      ;;
+      )
+    ;;
+    )
+  ;;
+  )
 
 ;;
 ;; Evaluate a token (or word) from the command line. For

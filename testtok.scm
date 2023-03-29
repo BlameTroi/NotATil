@@ -53,7 +53,7 @@ NotaTil."
   ;; (set! nat-in-comment #f)
   ;; (set! nat-in-string #f)
   (set! nat-buffer-empty #f)
-  ;; call net-tokenizer until such time as nat-buffer
+  ;; call nat-tokenizer until such time as nat-buffer
   ;; is empty
   (let* ((tok-pair '()) (tok-extra-pair '()) (tok-closing-pair '())
          (tok-type 'nat-tok-none) (tok-string "")
