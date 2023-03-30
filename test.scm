@@ -88,6 +88,19 @@
 (check (nat "0 ?dup") => '(0))
 (check (nat "1 ?dup") => '(1 1))
 
+;; proper comment
+(check (nat "5 3 + ( a test with a comment ) dup") => '(8 8))
+;; make sure comment skip doesn't go too far
+(check (nat "1 2 ( some text ) 3 4 5") => '(5 4 3 2 1))
+
+;; improper comment
+;; TODO: to really deal with such things I need to add exception handling
+;; in the interpreter loops, but I don't know if I should use the older
+;; error functions that I've been using for now or if I should use the
+;; new raise exception. This can wait a bit.
+;; (check (nat "5 3 + ( a test with an unclosed comment dup") => '(8 8))
+
+
 ;; test some simple definitions
 (check (nat ": foo 5 ; ") => '())          ;; define
 (check (nat ": foo 5 ; foo ") => '(5))     ;; define and execute
@@ -95,7 +108,8 @@
 ;; TODO: how to test for poorly setup defs? : foo 5; keeps
 ;; compiling after end.
 
-
+;; temp for dev
+(check (nat ": foo 5 : bar 3 ; ; ") => '(3 5)) ; this really should croak
 (check-report)
 
 ;; ; -- different equality predicate --

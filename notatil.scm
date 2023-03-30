@@ -95,13 +95,16 @@
   "Evaluate a command line for testing. Only initializes
 the dictionary if it is empty. Returns the stack."
   (nat-test-reset)
-  (nat-tokenize-old prog)
+  (set! nat-buffer prog)
+  (nat-tokenize)
   stack-data)
 
 (define (nat-test-clear-dictionary prog)
   "Test entry for unit test scripting, does a full reset."
   (nat-full-reset)
-  (nat-tokenize-old prog)
+  (set! nat-buffer prog)
+  (nat-tokenize)
+  (nat-evaluate)
   stack-data)
 
 ;;;
@@ -157,15 +160,19 @@ the length of the stack to the user."
 
 (define (nat-tokenize-old prog)
   (map
-   nat-eval
+   nat-evaluate
    (filter
     (lambda (t) (string<> "" t))
     (string-split prog (char-set #\space #\tab #\nl)))))
 
 (define (nat-tokenize)
-  "Take string S and convert it into a tokenized notatil
-program. The tokens are (type . word) pairs and are
-returned in a simple list."
+  "Convert the text in nat-buffer into a tokenized notatil
+program. Both immediate and definitional statements can be
+in the buffer.
+
+The tokens are (type . word) pairs and are returned in a
+vector to allow for easier backtracking when evaluating
+flow control statements."
 
   ;; reset tokenizer state
   (set! nat-buffer (nat-scrub nat-buffer))
@@ -215,14 +222,28 @@ returned in a simple list."
   ;; easier backtracking.
   (set! nat-tokenized (list->vector (reverse nat-tokenized))))
 
+
+(define (dump-five-around i)
+  "Dump up to 5 preceeding and following tokens around
+the current token for debugging."
+  (let ((s '()) (b (max (- i 5) 0)) (e (min (+ i 5) (vector-length nat-tokenized))))
+    (while (< b e)
+      (set! s (cons (cdr (vector-ref nat-tokenized b)) s))
+      (set! b (1+ b)))
+    (reverse s)))
+
 ;;
 ;; Evaluate (interpret, add to dictionary if needed) the
 ;; tokenized buffer.
+;;
 (define (nat-evaluate)
-  "Need better documentation! A vector of tokens is in
-nat-tokenized. Process the tokens in sequence, this
-can be a mix of live words and data to execute and
-definitions to compile and place in the nat-dictionary."
+  "Sequentially process the tokens in nat-tokenized. Both
+immediate and definitional tokens can be in the buffer. The
+definitional tokens actually 'execute' in a compile mode to
+update the nat-dictionary.
+
+The tokens are presented in a vector which makes it easier
+to backtrack when dealing with looping constructs."
   ;; vector-ref vector-set! vector-length
   ;; remember that you can't reference var1 in
   ;; var2 and expect it's value to be updated,
@@ -232,13 +253,67 @@ definitions to compile and place in the nat-dictionary."
   ;;   ((test? ...) final-exp)
   ;;  side-effecting-statements ...)
   (let* ((err #f)
-         (len (vector-length nat-tokenized)))
+         (len (vector-length nat-tokenized))
+         ;; current token, last token
+         (tp (cons 'nat-tok-none "")) (tt 'nat-tok-none) (tw "") ; this ...
+         (lp (cons 'nat-tok-none "")) (lt 'nat-tok-none) (lw "") ; last ...
+         (in-def #f) (compiling #f) ; TODO: maybe switch to global nat-*?
+         (in-comment #f) (in-string #f)
+         (new-word "" )
+         (i 0)
+         (j 0))
     ;;
-    (do ((i 0 (+ i 1)))
-        ((or err (>= i len)))
-      (display (vector-ref nat-tokenized i)) (newline)
-      ;;
-      )
+    ;; Advance through tokens. Some processing below will consume multiple
+    ;; tokens.
+    ;;
+    (while (and (not err) (< i len))
+      ;; remember prior
+      (set! lp tp) (set! lt tt) (set! lw tw)
+      ;; get next token
+      (set! tp (vector-ref nat-tokenized i))
+      (set! tt (car tp)) (set! tw (cdr tp))
+      ;; cond works nicely as a case structure here
+      (cond
+       ;; comments are just whitespace so skip them directly
+       ((eq? tt 'nat-tok-begin-comment)
+        (if (and  (< (+ 2 i) len)
+                  (eq? (car (vector-ref nat-tokenized (+ 2 i))) 'nat-tok-end-comment))
+
+            (begin ; must be followed by comment and end comment, advance
+              ;; i + 2 is a end coment so just advance
+              (set! i (+ 2 i))
+              (set! tp (vector-ref nat-tokenized i))
+              (set! tt (car tp))
+              (set! tw (cdr tp)) )
+            ;; i + 2 was not an end comment and may not even exist, throw error
+            (error 'nat-evaluate "illegal comment, missing close comment" tp i (dump-five-around i))))
+       ;; definitions bracket everything else
+       ((or in-def compiling)
+        ;; check for errors
+        ;; can't nest
+        (if (and in-def (eq? tt 'nat-tok-begin-definition))
+            (error 'nat-evaluate "colon definitions may not be nested" tp new-word i (dump-five-around i)))
+        ;; just drop out when def complete
+        (if (and in-def (eq? tt 'nat-tok-end-definition))
+            (begin (set! in-def #f) (set! compiling #f)))
+        )
+       ;; check for entering a defintion, possible new word compilation
+       ((member tt nat-definition-tokens)
+        (set! in-def #t)
+        (if (eq? tt 'nat-tok-begin-definition)
+            (set! compiling #t))
+        )
+       ;; if this is an immediate word (should be the case after above)
+       ;; just execute it
+       ((member tt nat-immediate-tokens) (nat-exec tw))
+       ;; otherwise report that something is out of whack
+       (else (display "nat-evaluate: token not handled. We have a hole in the bucket.") (newline)
+             (display "       token: ") (display tp) (newline)
+             (display "     context: ") (display  (dump-five-around i)) (newline))
+       ;; end cond
+       )
+      ;; next token
+      (set! i (1+ i)))
     ;;
     )
   ;;
@@ -263,7 +338,7 @@ definitions to compile and place in the nat-dictionary."
 ;; Then the new word and its definition are added to the
 ;; front of the dictionary.
 ;;
-(define (nat-eval word)
+(define (nat-exec word)
   (let ((definition (lookup word)))
     (cond
      ;; empty string happens when multiple delimiters hit on split
@@ -311,9 +386,11 @@ definitions to compile and place in the nat-dictionary."
      ;; I'm sorry Dave, I can't do that
 
      (else
-      (error 'nat-eval
-             "unknown or undefined word"
-             word radix stack-data)))))
+      (display "nat-exec word not found ") (display word) (newline)
+      ;; (error 'nat-eval
+      ;;        "unknown or undefined word"
+      ;;        word radix stack-data)
+      ))))
 
 
 ;;
@@ -591,6 +668,13 @@ including the string token TK."
 (define nat-token-code-map
   (list (cons "do " 'nat-tok-do)
         (cons "loop " 'nat-tok-loop)
+        (cons "+loop " 'nat-tok-+loop)
+        (cons "begin " 'nat-tok-begin)
+        (cons "until " 'nat-tok-until)
+        (cons "again " 'nat-tok-again)
+        (cons "while " 'nat-tok-while)
+        (cons "repeat " 'nat-tok-repeat)
+        (cons "leave " 'nat-tok-leave)
         (cons "if " 'nat-tok-if)
         (cons "then " 'nat-tok-then)
         (cons "else " 'nat-tok-else)
@@ -603,6 +687,9 @@ including the string token TK."
         (cons "list " 'nat-tok-list)
         (cons "bye " 'nat-tok-bye)
         (cons "help " 'nat-tok-help)
+        (cons "abort " 'nat-tok-abort)
+        (cons "page " 'nat-tok-page)
+        (cons "quit " 'nat-tok-quit)
         (cons "( " 'nat-tok-begin-comment)
         (cons ") " 'nat-tok-end-comment)
         ;; strings can be dormant or printing
@@ -621,6 +708,57 @@ including the string token TK."
         ;;
         ))
 
+(define nat-definition-tokens
+  '(nat-tok-definition
+    nat-tok-end-definition
+    nat-tok-marker
+    nat-tok-constant
+    nat-tok-variable
+    ))
+
+(define nat-loop-tokens
+  '(nat-tok-do
+    nat-tok-loop
+    nat-tok-+loop
+    nat-tok-begin
+    nat-tok-until
+    nat-tok-again
+    nat-tok-while
+    nat-tok-repeat
+    nat-tok-leave
+    ))
+
+(define nat-conditional-tokens
+  '(nat-tok-if
+    nat-tok-else
+    nat-tok-then
+    ))
+
+(define nat-repl-tokens
+  '(nat-tok-see
+    nat-tok-list
+    nat-tok-bye
+    nat-tok-help
+    ))
+
+(define nat-comment-tokens
+  '(nat-tok-begin-comment
+    nat-tok-end-comment
+    ))
+
+(define nat-string-tokens
+  '(nat-tok-print-string
+    nat-tok-begin-string
+    nat-tok-end-string
+    ))
+
+(define nat-immediate-tokens
+  '(nat-tok-word
+    nat-tok-integer
+    nat-tok-real
+    nat-tok-word-unknown                ; will error at times
+    ;; later nat-tok-string maybe?
+    ))
 
 ;;;
 ;;; Radix suppport.
