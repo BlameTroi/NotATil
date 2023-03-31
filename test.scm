@@ -109,7 +109,9 @@
 ;; compiling after end.
 
 ;; temp for dev
-(check (nat ": foo 5 : bar 3 ; ; ") => '(3 5)) ; this really should croak
+;; (check (nat ": foo 5 : bar 3 ; ; ") => '(3 5))
+                                        ; this really should croak
+
 (check-report)
 
 ;; ; -- different equality predicate --

@@ -107,6 +107,8 @@ the dictionary if it is empty. Returns the stack."
   (nat-evaluate)
   stack-data)
 
+(define nat nat-test-clear-dictionary)
+
 ;;;
 ;;; User interaction helpers
 ;;;
@@ -192,7 +194,7 @@ flow control statements."
       (set! tok-string (cdr tok-pair))
       (cond
        ((equal? tok-type 'nat-tok-word)
-        (set! dict-entry (lookup tok-string))
+        (set! dict-entry (nat-lookup tok-string))
         (if (equal? dict-entry 'nat-word-not-found)
             (let ((n (token-is-integer-literal tok-string radix))
                   (f (token-is-real-literal tok-string radix)))
@@ -257,11 +259,23 @@ to backtrack when dealing with looping constructs."
          ;; current token, last token
          (tp (cons 'nat-tok-none "")) (tt 'nat-tok-none) (tw "") ; this ...
          (lp (cons 'nat-tok-none "")) (lt 'nat-tok-none) (lw "") ; last ...
-         (in-def #f) (compiling #f) ; TODO: maybe switch to global nat-*?
+         (in-def #f)             ; TODO: maybe switch to global nat-*?
          (in-comment #f) (in-string #f)
          (new-word "" )
          (i 0)
          (j 0))
+    (define (dbg w)
+      ;; deug prints, i'm old fashioned
+      (display "<==") (display w) (display "==>") (newline)
+      (display "  i = ") (display i) (newline)
+      (display " lp = ") (display lp) (newline)
+      (display " tp = ") (display tp) (newline)
+      (display " def:") (display in-def)
+      (display " cmp:") (display nat-compiling)
+      (display " cmt:") (display in-comment)
+      (display " str:") (display in-string)
+      (newline)
+      )
     ;;
     ;; Advance through tokens. Some processing below will consume multiple
     ;; tokens.
@@ -275,9 +289,9 @@ to backtrack when dealing with looping constructs."
       ;; cond works nicely as a case structure here
       (cond
        ;; comments are just whitespace so skip them directly
-       ((eq? tt 'nat-tok-begin-comment)
+       ((equal? tt 'nat-tok-begin-comment)
         (if (and  (< (+ 2 i) len)
-                  (eq? (car (vector-ref nat-tokenized (+ 2 i))) 'nat-tok-end-comment))
+                  (equal? (car (vector-ref nat-tokenized (+ 2 i))) 'nat-tok-end-comment))
 
             (begin ; must be followed by comment and end comment, advance
               ;; i + 2 is a end coment so just advance
@@ -287,24 +301,41 @@ to backtrack when dealing with looping constructs."
               (set! tw (cdr tp)) )
             ;; i + 2 was not an end comment and may not even exist, throw error
             (error 'nat-evaluate "illegal comment, missing close comment" tp i (dump-five-around i))))
-       ;; definitions bracket everything else
-       ((or in-def compiling)
-        ;; check for errors
-        ;; can't nest
-        (if (and in-def (eq? tt 'nat-tok-begin-definition))
-            (error 'nat-evaluate "colon definitions may not be nested" tp new-word i (dump-five-around i)))
-        ;; just drop out when def complete
-        (if (and in-def (eq? tt 'nat-tok-end-definition))
-            (begin (set! in-def #f) (set! compiling #f)))
+       ((equal? tt 'nat-tok-end-definition)
+        ;; (dbg "new word end")
+        (set! nat-pending-def (reverse nat-pending-def))
+        (if (token-is-integer-literal (cdr (car nat-pending-def)) radix)
+            (error 'nat-evaluate "can not redefine numeric literal via :;" tp i (dump-five-around i)))
+        (nat-add-new-word)
+        (set! nat-compiling #f)
         )
-       ;; check for entering a defintion, possible new word compilation
-       ((member tt nat-definition-tokens)
-        (set! in-def #t)
-        (if (eq? tt 'nat-tok-begin-definition)
-            (set! compiling #t))
+       ;; start of a new word definition
+       ((equal? tt 'nat-tok-begin-definition)
+        ;; (dbg "new word start")
+        (if nat-compiling
+            (error 'nat-evaluate "illegal nesting of colon definition" tp i (dump-five-around i)))
+        (set! nat-compiling #t)
+        (set! nat-pending-def '())
         )
-       ;; if this is an immediate word (should be the case after above)
-       ;; just execute it
+       ;;
+       (nat-compiling
+        ;; (dbg "add to new word def")
+        (if (equal? lt 'nat-tok-begin-definition)
+            (begin                      ; start of new word definition
+              (set! new-word tw)))
+        (set! nat-pending-def (cons tp nat-pending-def))
+        )
+       ;; check for entering a defintion, possible new
+       ;; word compilation
+       ;; ((member tt nat-definition-tokens)
+       ;;  (set! in-def #t)
+       ;;  (if (eq? tt 'nat-tok-begin-definition)
+       ;;      (set! nat-compiling #t))
+       ;;  ;; variable, constant, marker, cells allot, and?
+       ;;  )
+       ;; if this is an immediate word just execute it.
+       ;; the only thing that *should* make it to here are
+       ;; immediate words.
        ((member tt nat-immediate-tokens) (nat-exec tw))
        ;; otherwise report that something is out of whack
        (else (display "nat-evaluate: token not handled. We have a hole in the bucket.") (newline)
@@ -339,7 +370,7 @@ to backtrack when dealing with looping constructs."
 ;; front of the dictionary.
 ;;
 (define (nat-exec word)
-  (let ((definition (lookup word)))
+  (let ((definition (nat-lookup word)))
     (cond
      ;; empty string happens when multiple delimiters hit on split
      ((string= "" word) )
@@ -352,18 +383,18 @@ to backtrack when dealing with looping constructs."
      ;; in the perm-words list.
      ((string= ":" word)
       (set! nat-compiling #t)
-      (set! pending-def '()))
+      (set! nat-pending-def '()))
 
      ((string= ";" word)
-      (set! pending-def (reverse pending-def))
-      (if (token-is-integer-literal (car pending-def) radix)
+      (set! nat-pending-def (reverse nat-pending-def))
+      (if (token-is-integer-literal (car nat-pending-def) radix)
           (error 'feval "can not redefine a numeric literal via :;"
-                 (car pending-def) radix (cdr pending-def)))
-      (add-new-word pending-def)
+                 (car nat-pending-def) radix (cdr nat-pending-def)))
+      (nat-add-new-word)
       (set! nat-compiling #f))
 
      (nat-compiling
-      (set! pending-def (cons word pending-def)))
+      (set! nat-pending-def (cons word nat-pending-def)))
 
      ;; once the user says bye, skip until end
      ((string-ci= "bye" word)
@@ -426,7 +457,7 @@ to backtrack when dealing with looping constructs."
 (define (nat-full-reset)
   "Reset the environment to a clean state."
   (clear-stacks)
-  (dictionary-build)
+  (nat-dictionary-build)
   (set! nat-compiling #f)
   (set! nat-terminating #f)
   (set! nat-buffer "")
@@ -442,8 +473,8 @@ to backtrack when dealing with looping constructs."
 (define (nat-test-reset)
   "Reset everything but the dictionary for testing."
   (clear-stacks)
-  (if (zero? (length dictionary))
-      (dictionary-build))
+  (if (zero? (length nat-dictionary))
+      (nat-dictionary-build))
   (set! nat-compiling #f)
   (set! nat-terminating #f)
   (set! nat-buffer "")
@@ -678,7 +709,7 @@ including the string token TK."
         (cons "if " 'nat-tok-if)
         (cons "then " 'nat-tok-then)
         (cons "else " 'nat-tok-else)
-        (cons ": " 'nat-tok-definition)
+        (cons ": " 'nat-tok-begin-definition)
         (cons "; " 'nat-tok-end-definition)
         (cons "variable " 'nat-tok-variable)
         (cons "constant " 'nat-tok-constant)
@@ -709,7 +740,7 @@ including the string token TK."
         ))
 
 (define nat-definition-tokens
-  '(nat-tok-definition
+  '(nat-tok-begin-definition
     nat-tok-end-definition
     nat-tok-marker
     nat-tok-constant
@@ -1255,14 +1286,16 @@ converted to the proper true value of -1."
 ;; Returns the dictionary entry for word or
 ;; 'nat-word-not-found.
 ;;
-(define (lookup word)
+(define (nat-lookup word)
   "Return the definition to execute WORD from the
 dictionary, or 'nat-word-not-found."
+  ;; (display "<==nat-lookup==> ")
+  ;; (display word) (newline)
   (letrec* ((f (lambda (w d)
                  (cond ((null? d) 'nat-word-not-found)
                        ((string-ci= w (entry-name (car d))) (car d))
                        (else (f w (cdr d)))))))
-    (f word dictionary)))
+    (f word nat-dictionary)))
 
 
 ;;
@@ -1275,31 +1308,50 @@ dictionary, or 'nat-word-not-found."
 ;; that exists in the current dictionary, copy its
 ;; definition and add it to the new word being defined.
 ;;
-(define (add-new-word pending-def)
-  "Add the new word and it's definition from PENDING-DEF
-to the dictionary."
-  (if (member (string-downcase (car pending-def)) perm-words)
-      (error 'add-new-word "some core words can not be redefined" pending-def))
-  (let ((new-word (car pending-def))
-        (def (cdr pending-def))
-        (tokenized '()) (curr "") (curr-def '()) (proc '()))
+(define (nat-add-new-word)
+  "Add the new word and it's definition from nat-pending-def
+to the nat-dictionary."
+  (let* ((nwp (car nat-pending-def)) (new-word (cdr nwp))
+         (def (cdr nat-pending-def))
+         (currp '())
+         (currt 'nat-tok-none)
+         (currw "")
+         (currw-def '())
+         (proc '())
+         (tokenized '())
+         )
+    ;; (define (dbg w)
+    ;;   (display "==>") (display w) (display "<==") (newline)
+    ;;   (display "      curr: ") (display curr) (newline)
+    ;;   (display " tokenized: ") (display tokenized) (newline)
+    ;;   (display "      proc: ") (display proc) (newline))
+    ;; some words can not be redefined
+    (if (member (string-downcase new-word) nat-perm-words)
+        (error 'nat-add-new-word "may not redefine core word" new-word nat-pending-def))
+    ;; the first pair in nat-pending-def is the name of the
+    ;; new word and has been consumed, process each remaining
+    ;; pair to build a dictionary entry for the new word.
     (while (not (null? def))
-      (set! curr (car def))
-      (set! curr-def (lookup curr))
-      (if (equal? curr-def 'nat-word-not-found)
-          (set! proc (token-is-integer-literal curr radix))
-          (set! proc (entry-proc curr-def)))
+      ;; get next and advance input pointer
+      (set! currp (car def)) (set! currt (car currp)) (set! currw (cdr currp))
+      (set! def (cdr def))
+      ;; is this a word we already know? or a literal?
+      (set! currw-def (nat-lookup currw))
+      (if (equal? currw-def 'nat-word-not-found)
+          (set! proc (token-is-integer-literal currw radix))
+          (set! proc (entry-proc currw-def)))
+      ;; if it resolved to something we can execute, add
+      ;; it to the accumulating definition
       (if (or (procedure? proc) (integer? proc) (list? proc))
           (set! tokenized (cons proc tokenized))
-          (error 'add-new-word "unknown word in definition :;" curr pending-def))
-      (set! def (cdr def)))
-    (set! dictionary (cons (entry-build new-word 'user-word (reverse tokenized)) dictionary))))
+          (error 'add-new-word "unknown word in definition :;" currp nat-pending-def)))
+    (set! nat-dictionary (cons (nat-entry-build new-word 'user-word (reverse tokenized)) nat-dictionary))))
 
 
 ;; These are words that can not be redefined. Their
 ;; operation is too fundamental to the assumptions in
 ;; notatil.
-(define perm-words
+(define nat-perm-words
   '(
     ;; all your base are belong to us
     "base" "base?"
@@ -1354,7 +1406,7 @@ to the dictionary."
 ;; These are not complete dictionary entries, just the
 ;; minimum information needed to built real entries via
 ;; dictionary-build.
-(define core-words
+(define nat-core-words
   (list
 
    ;; radix related, allowing some synonyms
@@ -1397,17 +1449,13 @@ to the dictionary."
    ))
 
 
-;; A pending definition is assembled here.
-(define pending-def '())
-
-
 ;; This is the current dictionary. When the system starts
 ;; the core-words are copied. New definitions are added
 ;; to the head of the list. All word searches start from
 ;; the head of the list. This prevents a redefinition of
 ;; a word from changing the behavior of older words that
 ;; were compiled with an older definition.
-(define dictionary '())
+(define nat-dictionary '())
 
 ;; Dictionary format is a lifo stack implemented as an
 ;; consed list of pairs. All lokups are sequential. Words
@@ -1432,19 +1480,19 @@ to the dictionary."
 (define (entry-name w) (car w))
 (define (entry-type w) (car (cdr w)))
 (define (entry-proc w) (cdr (cdr w)))
-(define (entry-build n t p)
+(define (nat-entry-build n t p)
   (cons n (cons t p)))
 
-(define (dictionary-build)
-  (set! dictionary '())
+(define (nat-dictionary-build)
+  (set! nat-dictionary '())
   (letrec* ((n '()) (t 'core-word) (p '())
             (f (lambda (xs)
                  (cond ((null? xs) )
                        (else (set! n (car (car xs)))
                              (set! p (cdr (car xs)))
-                             (set! dictionary (cons (entry-build n t p) dictionary))
+                             (set! nat-dictionary (cons (nat-entry-build n t p) nat-dictionary))
                              (f (cdr xs)))))))
-               (f core-words)))
+               (f nat-core-words)))
 
 
 ;;;

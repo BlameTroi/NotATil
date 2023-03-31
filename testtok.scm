@@ -64,7 +64,7 @@ NotaTil."
       (set! tok-string (cdr tok-pair))
       (cond
        ((equal? tok-type 'nat-tok-word)
-        (set! dict-entry (lookup tok-string))
+        (set! dict-entry (nat-lookup tok-string))
         (if (equal? dict-entry 'nat-word-not-found)
             (let ((n (token-is-integer-literal tok-string radix))
                   (f (token-is-real-literal tok-string radix)))
@@ -139,7 +139,7 @@ NotaTil."
 (check (tok-tester "help") =>
        (list (cons 'nat-tok-help "help")))
 (check (tok-tester ":") =>
-       (list (cons 'nat-tok-definition ":")))
+       (list (cons 'nat-tok-begin-definition ":")))
 
 ;; does not change case
 (check (tok-tester "DelTA") =>
@@ -179,7 +179,7 @@ NotaTil."
 ;; simple multi token expressions
 ;;
 (check (tok-tester ": foo 5 ; ") =>
-       (list (cons 'nat-tok-definition ":")
+       (list (cons 'nat-tok-begin-definition ":")
              (cons 'nat-tok-word-unknown "foo")
              (cons 'nat-tok-integer "5")
              (cons 'nat-tok-end-definition ";")))
@@ -216,7 +216,7 @@ NotaTil."
 
 ;; comments
 (check (tok-tester ": plus ( n1 n2 -- sum ) + ; ") =>
-       (list (cons 'nat-tok-definition ":")
+       (list (cons 'nat-tok-begin-definition ":")
              (cons 'nat-tok-word-unknown "plus")
              (cons 'nat-tok-begin-comment "(")
              (cons 'nat-tok-comment "n1 n2 -- sum ")
