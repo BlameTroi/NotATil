@@ -3,9 +3,9 @@ solution :=
 guile := guile -L .
 
 help :
-	echo 'Run make (old | new)'
+	echo 'Run make ( new | tok )'
 
-check-all : new
+check-all : new tok
 
 tok :
 	$(guile) testtok.scm $(solution)
@@ -13,6 +13,4 @@ tok :
 new :
 	$(guile) test.scm $(solution)
 
-old :
-	$(guile) oldtest.scm $(solution)
 .PHONY : help check-all guile
