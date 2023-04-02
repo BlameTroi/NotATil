@@ -112,11 +112,13 @@
   (if (not prog)
       (set! prog ""))
   (set! nat-buffer (nat-scrub prog))
-  (display nat-buffer) (newline)
   (while (not nat-terminating)
     (nat-tokenize)
     (nat-evaluate)
-    (set! nat-buffer (nat-scrub  (readline ">"))))
+    (if (not nat-terminating)
+        (begin
+          (newline) (nat-stack-depth)
+          (set! nat-buffer (nat-scrub  (readline " > "))))))
   (newline) (display "nat-test-repl -- done") (newline))
 
 ;;;
@@ -127,7 +129,7 @@
 ;; Display a prompt and read into the nat-buffer.
 ;;
 (define (nat-prompt-read)
-  (set! nat-buffer (readline "> ")))
+  (nat-stack-depth) (set! nat-buffer (readline " > ")))
 
 ;;
 ;; This is not used as yet, but if the tokenizer detects
@@ -139,7 +141,7 @@
 ;; start of the incomplete entry?
 ;;
 (define (nat-prompt-more)
-  (set! nat-buffer (string-append nat-buffer (readline "+ "))))
+  (set! nat-buffer (string-append nat-buffer (readline " + "))))
 
 ;;
 ;; Display the status of the last commands and print the
@@ -149,12 +151,18 @@
 ;;
 (define (nat-display-status)
   (display nat-status)
-  (if (> (length stack-data) 0)
-      (display (length stack-data)))
-  (if (> (length stack-float) 0)
-      (begin  (display " F:") (display (length stack-float))))
   (newline))
 
+;;
+;; Display depth of main stack even if it is empty, and the
+;; float stack's depth if it isn't empty. For a prefix to
+;; prompts.
+;;
+(define (nat-stack-depth)
+  (display "[s:") (display (number->string (length stack-data)))
+  (if (> (length stack-float) 0)
+      (begin (display " f:") (display (number->string (length stack-float)))))
+  (display "]"))
 ;;
 ;; Reset the environment to a known initial state. Clear
 ;; stacks, restore starting dictionary, set any globals,
