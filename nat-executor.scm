@@ -120,7 +120,12 @@ to backtrack when dealing with looping constructs."
        ;; otherwise report that something is out of whack
        (else (display "nat-evaluate: token not handled. We have a hole in the bucket.") (newline)
              (display "       token: ") (display tp) (newline)
-             (display "     context: ") (display  (dump-five-around i)) (newline))
+             (display "     context: ") (display  (dump-five-around i)) (newline)
+       (display tt) (newline)
+       (display nat-immediate-tokens) (newline)
+       (display tp) (newline)
+       (display tw) (newline)
+       (display "testing") (newline))
        ;; end cond
        )
       ;; next token
