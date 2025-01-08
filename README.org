@@ -1,3 +1,5 @@
 * NotATil -- no, not a TIL at all
 
-A Forthish language implemented in Guile Scheme that doesn't use a traditional Forth "threaded interpreted language" dictionary and execution engine.
+A Forthish language implemented in Scheme that doesn't use a
+traditional Forth "threaded interpreted language" dictionary and
+execution engine.
